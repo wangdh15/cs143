@@ -7,6 +7,7 @@
  *  output, so headers and global definitions are placed here to be visible
  * to the code in the file.  Don't remove anything that was here initially
  */
+%option noyywrap
 %{
 #include <cool-parse.h>
 #include <stringtab.h>
@@ -71,7 +72,7 @@ DARROW          =>
 
  /*
   *  String constants (C syntax)
-  *  Escape sequence \c is accepted for all characters c. Except for 
+  *  Escape sequence \c is accepted for all characters c. Except for
   *  \n \t \b \f, the result is c.
   *
   */
