@@ -145,10 +145,12 @@ WHITE_SPACE    [ \t\f\r\v]+
 }
 
  /* match content without \ " newline */
-[^\\\"\n]* { yymore(); }
+[^\\\"\n]* {
+  yymore(); }
+
 
   /*match newline without \ before it, it is illegal*/
-"\n" {
+\n {
   yylval.error_msg = "Unterminated string constant";
   BEGIN 0;
   curr_lineno++;
@@ -156,32 +158,38 @@ WHITE_SPACE    [ \t\f\r\v]+
 }
 
  /* match \ + newline*/
-"\\\n" {
+\\\n {
   curr_lineno++;
   yymore();
 }
 
   /*match \ and the following is not \0 and \n*/
-"\\[^\n]" {
+\\[^\n] {
   yymore();
 }
   /* only match \ and then no other character. This will then match EOF*/
-"\\" {
+\\ {
   yymore();
 }
 
 \" {
 
-  std::string str = yytext;
-  str = str.substr(0, str.size() - 1);
-  const int n = str.size();
+  int n = yyleng;
   std::string ans;
+
+  // check whether contain \0
   for (int i = 0; i < n; ++i) {
-    if (str[i] == '\0') {
+    if (yytext[i] == '\0') {
       yylval.error_msg = "String contains null character";
       BEGIN 0;
       return ERROR;
     }
+  }
+
+  std::string str = yytext;
+  str = str.substr(0, str.size() - 1);
+  n = str.size();
+  for (int i = 0; i < n; ++i) {
     if (str[i] == '\\') {
       if (str[i + 1] == 'b') {
         ans += '\b';
@@ -199,6 +207,7 @@ WHITE_SPACE    [ \t\f\r\v]+
       ans += str[i];
     }
   }
+
 
   if (ans.size() <= MAX_STR_CONST - 1) {
     cool_yylval.symbol = stringtable.add_string(const_cast<char*>(ans.c_str()));
