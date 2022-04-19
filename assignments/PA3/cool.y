@@ -143,8 +143,26 @@
     %type <case_> case
     %type <expressions> expression_list
     %type <expression> expression
+    %type <expressions> expression_block
+    %type <expression> let_expression
 
     /* Precedence declarations go here. */
+
+    /* %right ASSIGN
+    %nonassoc '<' '=' LE
+    %left '+' '-'
+    %left '*' '/'
+    %precedence '@'
+    %left '.' */
+    %right ASSIGN
+    %nonassoc NOT
+    %nonassoc '<' '=' LE
+    %left '+' '-'
+    %left '*' '/'
+    %nonassoc ISVOID
+    %nonassoc '~'
+    %nonassoc '@'
+    %left '.'
 
 
     %%
@@ -174,30 +192,128 @@
     /* Feature list may be empty, but no empty features in list. */
     feature_list:		/* empty */
     {  $$ = nil_Features(); }
+    | feature
+    {$$ = single_Features($1);}
     | feature_list feature
     { $$ = append_Features($1, single_Features($2));}
     ;
 
     feature
-    : OBJECTID '(' ')' ':' TYPEID '{' expression '}'
-    { $$ =  method($1, nil_Formals(), $5, $7);}
-    | OBJECTID '(' formal formal_list ')' ':' TYPEID '{' expression '}'
-    | OBJECTID ':' TYPEID
-    | OBJECTID ':' TYPEID ASSIGN expression
+    : OBJECTID '(' formal_list ')' ':' TYPEID '{' expression '}' ';'
+    {$$ = method($1, $3, $6, $8);}
+    | OBJECTID ':' TYPEID ';'
+    {$$  = attr($1, $3, no_expr());}
+    | OBJECTID ':' TYPEID ASSIGN expression ';'
+    {$$ = attr($1, $3, $5);}
+    ;
+
+    formal_list
+    :
+    {$$ = nil_Formals();}
+    | formal
+    {$$ = single_Formals($1);}
+    | formal_list ',' formal
+    {$$ = append_Formals($1, single_Formals($3));}
     ;
 
     formal
     : OBJECTID ':' TYPEID
-    ;
-
-    formal_list:
-    {}
-    | ',' formal
+    {$$ = formal($1, $3);}
     ;
 
     expression
     : OBJECTID ASSIGN expression
-    | expression '.' OBJECTID '('
+    {$$ = assign($1, $3);}
+    | expression '.' OBJECTID '(' expression_list ')'
+    {$$ = dispatch($1, $3, $5);}
+    | expression '@' TYPEID '.' OBJECTID '(' expression_list ')'
+    {$$ = static_dispatch($1, $3, $5, $7);}
+    | OBJECTID '(' expression_list ')'
+    {$$ = dispatch(object(idtable.add_string("self")), $1, $3);}
+    | IF expression THEN expression ELSE expression
+    {$$ = cond($2, $4, $6);}
+    | WHILE expression LOOP expression POOL
+    {$$ = loop($2, $4);}
+    | '{' expression_block '}'
+    {$$ = block($2);}
+    | LET let_expression
+    {$$ = $2;}
+    | CASE expression OF case_list ESAC
+    {$$ = typcase($2, $4);}
+    | NEW TYPEID
+    {$$ = new_($2);}
+    | ISVOID expression
+    {$$ = isvoid($2);}
+    | expression '+' expression
+    {$$ = plus($1, $3);}
+    | expression '-' expression
+    {$$ = sub($1, $3);}
+    | expression '*' expression
+    {$$ = mul($1, $3);}
+    | expression '/' expression
+    {$$ = divide($1, $3);}
+    | '~' expression
+    {$$ = neg($2);}
+    | expression '<' expression
+    {$$ = lt($1, $3);}
+    | expression LE expression
+    {$$ = leq($1, $3);}
+    | expression '=' expression
+    {$$ = eq($1, $3);}
+    | NOT expression
+    {$$ = comp($2);}
+    | '(' expression ')'
+    {$$ = $2;}
+    | OBJECTID
+    {$$ = object($1);}
+    | INT_CONST
+    {$$ = int_const($1);}
+    | STR_CONST
+    {$$ = string_const($1);}
+    | BOOL_CONST
+    {$$ = bool_const($1);}
+    ;
+
+    expression_list
+    :
+    {$$ = nil_Expressions();}
+    | expression
+    {$$ = single_Expressions($1);}
+    | expression_list ',' expression
+    {$$ = append_Expressions($1, single_Expressions($3));}
+    ;
+
+    expression_block
+    : expression ';'
+    {$$ = single_Expressions($1);}
+    | expression_block expression
+    {$$ = append_Expressions($1, single_Expressions($2));}
+    ;
+
+
+    let_expression
+    : OBJECTID ':' TYPEID IN expression
+    {$$ = let($1, $3, no_expr(), $5);}
+    | OBJECTID ':' TYPEID ASSIGN expression IN expression
+    {$$ = let($1, $3, $5, $7);}
+    | OBJECTID ':' TYPEID ',' let_expression
+    {$$ = let($1, $3, no_expr(), $5);}
+    | OBJECTID ':' TYPEID ASSIGN expression ',' let_expression
+    {$$ = let($1, $3, $5, $7);}
+    ;
+
+    case_list
+    : case
+    {$$ = single_Cases($1);}
+    | case_list case
+    {$$ = append_Cases($1, single_Cases($2));}
+    ;
+
+    case
+    : OBJECTID ':' TYPEID DARROW expression ';'
+    {$$ = branch($1, $3, $5);}
+    ;
+
 
     /* end of grammar */
     %%
