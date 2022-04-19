@@ -187,6 +187,8 @@
     stringtable.add_string(curr_filename)); }
     | CLASS TYPEID INHERITS TYPEID '{' feature_list '}' ';'
     { $$ = class_($2,$4,$6,stringtable.add_string(curr_filename)); }
+    | error ';'
+    {}
     ;
 
     /* Feature list may be empty, but no empty features in list. */
@@ -205,6 +207,8 @@
     {$$  = attr($1, $3, no_expr());}
     | OBJECTID ':' TYPEID ASSIGN expression ';'
     {$$ = attr($1, $3, $5);}
+    | error ';'
+    {}
     ;
 
     formal_list
@@ -230,7 +234,7 @@
     {$$ = static_dispatch($1, $3, $5, $7);}
     | OBJECTID '(' expression_list ')'
     {$$ = dispatch(object(idtable.add_string("self")), $1, $3);}
-    | IF expression THEN expression ELSE expression
+    | IF expression THEN expression ELSE expression FI
     {$$ = cond($2, $4, $6);}
     | WHILE expression LOOP expression POOL
     {$$ = loop($2, $4);}
@@ -300,6 +304,8 @@
     {$$ = let($1, $3, no_expr(), $5);}
     | OBJECTID ':' TYPEID ASSIGN expression ',' let_expression
     {$$ = let($1, $3, $5, $7);}
+    | error ','
+    {}
     ;
 
     case_list
