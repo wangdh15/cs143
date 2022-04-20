@@ -145,6 +145,8 @@
     %type <expression> expression
     %type <expressions> expression_block
     %type <expression> let_expression
+    %type <expression> while_expression
+    %type <expression> assign_expression
 
     /* Precedence declarations go here. */
 
@@ -226,8 +228,8 @@
     ;
 
     expression
-    : OBJECTID ASSIGN expression
-    {$$ = assign($1, $3);}
+    : assign_expression
+    {$$ = $1;}
     | expression '.' OBJECTID '(' expression_list ')'
     {$$ = dispatch($1, $3, $5);}
     | expression '@' TYPEID '.' OBJECTID '(' expression_list ')'
@@ -236,8 +238,8 @@
     {$$ = dispatch(object(idtable.add_string("self")), $1, $3);}
     | IF expression THEN expression ELSE expression FI
     {$$ = cond($2, $4, $6);}
-    | WHILE expression LOOP expression POOL
-    {$$ = loop($2, $4);}
+    | while_expression
+    {$$ = $1;}
     | '{' expression_block '}'
     {$$ = block($2);}
     | LET let_expression
@@ -276,7 +278,18 @@
     {$$ = string_const($1);}
     | BOOL_CONST
     {$$ = bool_const($1);}
+    ;
+
+    assign_expression
+    : OBJECTID ASSIGN expression
+    {$$ = assign($1, $3);}
     | error
+    {}
+
+    while_expression
+    : WHILE expression LOOP expression POOL
+    {$$ = loop($2, $4);}
+    | WHILE expression LOOP expression error
     {}
     ;
 
