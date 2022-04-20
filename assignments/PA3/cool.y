@@ -283,13 +283,16 @@
     assign_expression
     : OBJECTID ASSIGN expression
     {$$ = assign($1, $3);}
-    | error
+    | OBJECTID error TYPEID
     {}
+    ;
 
     while_expression
     : WHILE expression LOOP expression POOL
     {$$ = loop($2, $4);}
-    | WHILE expression LOOP expression error
+    | WHILE error LOOP
+    {}
+    | WHILE error POOL
     {}
     ;
 
@@ -321,7 +324,7 @@
     {$$ = let($1, $3, no_expr(), $5);}
     | OBJECTID ':' TYPEID ASSIGN expression ',' let_expression
     {$$ = let($1, $3, $5, $7);}
-    | error ','
+    | error ',' let_expression
     {}
     ;
 
