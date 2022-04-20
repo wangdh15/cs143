@@ -276,6 +276,8 @@
     {$$ = string_const($1);}
     | BOOL_CONST
     {$$ = bool_const($1);}
+    | error
+    {}
     ;
 
     expression_list
@@ -290,8 +292,10 @@
     expression_block
     : expression ';'
     {$$ = single_Expressions($1);}
-    | expression_block expression
+    | expression_block expression ';'
     {$$ = append_Expressions($1, single_Expressions($2));}
+    | error ';'
+    {}
     ;
 
 
