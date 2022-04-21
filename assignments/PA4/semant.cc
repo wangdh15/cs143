@@ -312,6 +312,7 @@ void ClassTable::check_phase1() {
     check_cycle();
 }
 
+
 // check other information
 void ClassTable::check_phase2() {
 
