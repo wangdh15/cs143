@@ -204,7 +204,7 @@ void ClassTable::install_user_classes() {
             cur_class_name == Int ||
             cur_class_name == Bool ||
             cur_class_name == Str) {
-                semant_error(classes_->nth(i)) << "Redefinition of basic class " << cur_class_name->get_string()
+                semant_error(classes_->nth(i)) << "Redefinition of basic class " << cur_class_name
                 << "." << std::endl;
                 abort();
             }
@@ -219,8 +219,8 @@ void ClassTable::install_user_classes() {
             cur_class_parent == Str ||
             cur_class_parent == Int ||
             cur_class_parent == Bool) {
-            semant_error(classes_->nth(i)) <<  "Class " << cur_class_name->get_string() <<
-                 " cannot inherit class "<< cur_class_parent->get_string() << "." << std::endl;
+            semant_error(classes_->nth(i)) <<  "Class " << cur_class_name <<
+                 " cannot inherit class "<< cur_class_parent << "." << std::endl;
             abort();
         }
     }
@@ -231,7 +231,7 @@ void ClassTable::install_user_classes() {
         Symbol cur_class_name = cur_class->get_name();
         Symbol cur_class_parent = cur_class->get_parent();
         if (graph_.find(cur_class_name) != graph_.end()) {
-            semant_error(classes_->nth(i)) << "Class " << cur_class_name->get_string() << " was previously defined." << std::endl;
+            semant_error(classes_->nth(i)) << "Class " << cur_class_name << " was previously defined." << std::endl;
             abort();
         }
         graph_[cur_class_name] = cur_class_parent;
@@ -245,8 +245,8 @@ void ClassTable::install_user_classes() {
         if (cur_class_name == Object) continue;
         if (graph_.find(cur_class_parent) == graph_.end()) {
             semant_error(classes_->nth(i)) << "Class "
-                << cur_class_name->get_string() << " inherits from an undefined class "
-                << cur_class_parent->get_string() << "." << std::endl;
+                << cur_class_name << " inherits from an undefined class "
+                << cur_class_parent << "." << std::endl;
             abort();
         }
     }
@@ -314,6 +314,8 @@ void ClassTable::check_phase1() {
 
 // check other information
 void ClassTable::check_phase2() {
+
+
 
 }
 
