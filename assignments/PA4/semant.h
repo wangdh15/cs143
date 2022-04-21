@@ -2,7 +2,9 @@
 #define SEMANT_H_
 
 #include <assert.h>
-#include <iostream>  
+#include <iostream>
+#include <unordered_map>
+#include <vector>
 #include "cool-tree.h"
 #include "stringtab.h"
 #include "symtab.h"
@@ -23,10 +25,26 @@ class ClassTable {
 private:
   int semant_errors;
   void install_basic_classes();
+  void install_user_classes();
+  void check_cycle();
+
+  void abort() {
+    cerr << "Compilation halted due to static semantic errors." << endl;
+	  exit(1);
+  }
   ostream& error_stream;
+
+  Classes classes_;
+
+  std::unordered_map<Symbol, Symbol> graph_;
 
 public:
   ClassTable(Classes);
+
+  void check_phase1();
+
+  void check_phase2();
+
   int errors() { return semant_errors; }
   ostream& semant_error();
   ostream& semant_error(Class_ c);

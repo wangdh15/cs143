@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <vector>
+#include <unordered_map>
+#include <queue>
 #include "semant.h"
 #include "utilities.h"
 
@@ -19,7 +22,7 @@ extern char *curr_filename;
 // as fixed names used by the runtime system.
 //
 //////////////////////////////////////////////////////////////////////
-static Symbol 
+static Symbol
     arg,
     arg2,
     Bool,
@@ -64,7 +67,7 @@ static void initialize_constants(void)
     length      = idtable.add_string("length");
     Main        = idtable.add_string("Main");
     main_meth   = idtable.add_string("main");
-    //   _no_class is a symbol that can't be the name of any 
+    //   _no_class is a symbol that can't be the name of any
     //   user-defined class.
     No_class    = idtable.add_string("_no_class");
     No_type     = idtable.add_string("_no_type");
@@ -83,10 +86,8 @@ static void initialize_constants(void)
 
 
 
-ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr) {
-
-    /* Fill this in */
-
+ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr), classes_(classes) {
+    install_basic_classes();
 }
 
 void ClassTable::install_basic_classes() {
@@ -94,17 +95,17 @@ void ClassTable::install_basic_classes() {
     // The tree package uses these globals to annotate the classes built below.
    // curr_lineno  = 0;
     Symbol filename = stringtable.add_string("<basic class>");
-    
+
     // The following demonstrates how to create dummy parse trees to
     // refer to basic Cool classes.  There's no need for method
     // bodies -- these are already built into the runtime system.
-    
+
     // IMPORTANT: The results of the following expressions are
     // stored in local variables.  You will want to do something
     // with those variables at the end of this method to make this
     // code meaningful.
 
-    // 
+    //
     // The Object class has no parent class. Its methods are
     //        abort() : Object    aborts the program
     //        type_name() : Str   returns a string representation of class name
@@ -114,7 +115,7 @@ void ClassTable::install_basic_classes() {
     // are already built in to the runtime system.
 
     Class_ Object_class =
-	class_(Object, 
+	class_(Object,
 	       No_class,
 	       append_Features(
 			       append_Features(
@@ -122,16 +123,15 @@ void ClassTable::install_basic_classes() {
 					       single_Features(method(type_name, nil_Formals(), Str, no_expr()))),
 			       single_Features(method(copy, nil_Formals(), SELF_TYPE, no_expr()))),
 	       filename);
-
-    // 
+    //
     // The IO class inherits from Object. Its methods are
     //        out_string(Str) : SELF_TYPE       writes a string to the output
     //        out_int(Int) : SELF_TYPE            "    an int    "  "     "
     //        in_string() : Str                 reads a string from the input
     //        in_int() : Int                      "   an int     "  "     "
     //
-    Class_ IO_class = 
-	class_(IO, 
+    Class_ IO_class =
+	class_(IO,
 	       Object,
 	       append_Features(
 			       append_Features(
@@ -142,24 +142,21 @@ void ClassTable::install_basic_classes() {
 										      SELF_TYPE, no_expr()))),
 					       single_Features(method(in_string, nil_Formals(), Str, no_expr()))),
 			       single_Features(method(in_int, nil_Formals(), Int, no_expr()))),
-	       filename);  
-
+	       filename);
     //
     // The Int class has no methods and only a single attribute, the
-    // "val" for the integer. 
+    // "val" for the integer.
     //
     Class_ Int_class =
-	class_(Int, 
+	class_(Int,
 	       Object,
 	       single_Features(attr(val, prim_slot, no_expr())),
 	       filename);
-
     //
     // Bool also has only the "val" slot.
     //
     Class_ Bool_class =
 	class_(Bool, Object, single_Features(attr(val, prim_slot, no_expr())),filename);
-
     //
     // The class Str has a number of slots and operations:
     //       val                                  the length of the string
@@ -167,9 +164,9 @@ void ClassTable::install_basic_classes() {
     //       length() : Int                       returns length of the string
     //       concat(arg: Str) : Str               performs string concatenation
     //       substr(arg: Int, arg2: Int): Str     substring selection
-    //       
+    //
     Class_ Str_class =
-	class_(Str, 
+	class_(Str,
 	       Object,
 	       append_Features(
 			       append_Features(
@@ -178,16 +175,146 @@ void ClassTable::install_basic_classes() {
 									       single_Features(attr(val, Int, no_expr())),
 									       single_Features(attr(str_field, prim_slot, no_expr()))),
 							       single_Features(method(length, nil_Formals(), Int, no_expr()))),
-					       single_Features(method(concat, 
+					       single_Features(method(concat,
 								      single_Formals(formal(arg, Str)),
-								      Str, 
+								      Str,
 								      no_expr()))),
-			       single_Features(method(substr, 
-						      append_Formals(single_Formals(formal(arg, Int)), 
+			       single_Features(method(substr,
+						      append_Formals(single_Formals(formal(arg, Int)),
 								     single_Formals(formal(arg2, Int))),
-						      Str, 
+						      Str,
 						      no_expr()))),
 	       filename);
+    graph_[Object] = No_class;
+    graph_[IO] = Object;
+    graph_[Int] = Object;
+    graph_[Bool] = Object;
+    graph_[Str] = Object;
+}
+
+void ClassTable::install_user_classes() {
+
+    // check redefination of basic class
+    for (int i = classes_->first(); classes_->more(i); i = classes_->next(i)) {
+        auto cur_class = dynamic_cast<class__class*>(classes_->nth(i));
+        Symbol cur_class_name = cur_class->get_name();
+        if (cur_class_name == SELF_TYPE ||
+            cur_class_name == Object ||
+            cur_class_name == IO ||
+            cur_class_name == Int ||
+            cur_class_name == Bool ||
+            cur_class_name == Str) {
+                semant_error(classes_->nth(i)) << "Redefinition of basic class " << cur_class_name->get_string()
+                << "." << std::endl;
+                abort();
+            }
+    }
+
+    // check inherits from Str Bool Int SELF_TYPE
+    for (int i = classes_->first(); classes_->more(i); i = classes_->next(i)) {
+        auto cur_class = dynamic_cast<class__class*>(classes_->nth(i));
+        Symbol cur_class_name = cur_class->get_name();
+        Symbol cur_class_parent = cur_class->get_parent();
+        if (cur_class_parent == SELF_TYPE ||
+            cur_class_parent == Str ||
+            cur_class_parent == Int ||
+            cur_class_parent == Bool) {
+            semant_error(classes_->nth(i)) <<  "Class " << cur_class_name->get_string() <<
+                 " cannot inherit class "<< cur_class_parent->get_string() << "." << std::endl;
+            abort();
+        }
+    }
+
+
+
+    // add the user class to graph and check redefine.
+    for (int i = classes_->first(); classes_->more(i); i = classes_->next(i)) {
+        auto cur_class = dynamic_cast<class__class*>(classes_->nth(i));
+        Symbol cur_class_name = cur_class->get_name();
+        Symbol cur_class_parent = cur_class->get_parent();
+        if (graph_.find(cur_class_name) != graph_.end()) {
+            semant_error(classes_->nth(i)) << "Class " << cur_class_name->get_string() << " was previously defined." << std::endl;
+            abort();
+        }
+        graph_[cur_class_name] = cur_class_parent;
+    }
+
+    // check all parent is defined.
+    for (int i = classes_->first(); classes_->more(i); i = classes_->next(i)) {
+        auto cur_class = dynamic_cast<class__class*>(classes_->nth(i));
+        Symbol cur_class_name = cur_class->get_name();
+        Symbol cur_class_parent = cur_class->get_parent();
+        if (cur_class_name == Object) continue;
+        if (graph_.find(cur_class_parent) == graph_.end()) {
+            semant_error(classes_->nth(i)) << "Class "
+                << cur_class_name->get_string() << " inherits from an undefined class "
+                << cur_class_parent->get_string() << "." << std::endl;
+            abort();
+        }
+    }
+
+    // check if contain Main class
+    bool contain_main = false;
+    for (int i = classes_->first(); classes_->more(i); i = classes_->next(i)) {
+        auto cur_class = dynamic_cast<class__class*>(classes_->nth(i));
+        Symbol cur_class_name = cur_class->get_name();
+        if (cur_class_name == Main) {
+            contain_main = true;
+            break;
+        }
+    }
+    if (!contain_main) {
+        semant_error() << "Class Main is not defined." << std::endl;
+        abort();
+    }
+}
+
+
+/**
+Use typo sort to check cycle.
+*/
+void ClassTable::check_cycle() {
+
+    // +1 means the parent of Object: No_type
+    int all_class_num = graph_.size() + 1;
+
+    std::unordered_map<Symbol, int> degrees;
+    for (auto& [k, v] : graph_) {
+        degrees[v]++;
+    }
+    std::queue<Symbol> qe;
+    for (auto& [k, v] : graph_) {
+        if (degrees.find(k) == degrees.end()) qe.push(k);
+    }
+
+    int pop_class_num = 0;
+    while (!qe.empty()) {
+        auto cur = qe.front();
+        qe.pop();
+        pop_class_num ++;
+        if (cur == No_class) continue;
+        degrees[graph_[cur]]--;
+        if (degrees[graph_[cur]] == 0) qe.push(graph_[cur]);
+    }
+
+    if (pop_class_num != all_class_num) {
+        semant_error() << "exist cycle!" << std::endl;
+        abort();
+    }
+}
+
+void ClassTable::check_phase1() {
+
+    if (classes_ == nullptr) {
+        return;
+    }
+
+    install_user_classes();
+    check_cycle();
+}
+
+void ClassTable::check_phase2() {
+
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -195,20 +322,20 @@ void ClassTable::install_basic_classes() {
 // semant_error is an overloaded function for reporting errors
 // during semantic analysis.  There are three versions:
 //
-//    ostream& ClassTable::semant_error()                
+//    ostream& ClassTable::semant_error()
 //
 //    ostream& ClassTable::semant_error(Class_ c)
 //       print line number and filename for `c'
 //
-//    ostream& ClassTable::semant_error(Symbol filename, tree_node *t)  
+//    ostream& ClassTable::semant_error(Symbol filename, tree_node *t)
 //       print a line number and filename
 //
 ///////////////////////////////////////////////////////////////////
 
 ostream& ClassTable::semant_error(Class_ c)
-{                                                             
+{
     return semant_error(c->get_filename(),c);
-}    
+}
 
 ostream& ClassTable::semant_error(Symbol filename, tree_node *t)
 {
@@ -216,11 +343,11 @@ ostream& ClassTable::semant_error(Symbol filename, tree_node *t)
     return semant_error();
 }
 
-ostream& ClassTable::semant_error()                  
-{                                                 
-    semant_errors++;                            
+ostream& ClassTable::semant_error()
+{
+    semant_errors++;
     return error_stream;
-} 
+}
 
 
 
@@ -244,6 +371,10 @@ void program_class::semant()
     /* ClassTable constructor may do some semantic analysis */
     ClassTable *classtable = new ClassTable(classes);
 
+    // semantic analysis phase 1, check inheritance graph.
+    classtable->check_phase1();
+    // semantic analysis phase 2, check others.
+    classtable->check_phase2();
     /* some semantic analysis code may go here */
 
     if (classtable->errors()) {
