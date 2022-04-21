@@ -225,8 +225,6 @@ void ClassTable::install_user_classes() {
         }
     }
 
-
-
     // add the user class to graph and check redefine.
     for (int i = classes_->first(); classes_->more(i); i = classes_->next(i)) {
         auto cur_class = dynamic_cast<class__class*>(classes_->nth(i));
@@ -303,6 +301,7 @@ void ClassTable::check_cycle() {
     }
 }
 
+// check inheritance graph
 void ClassTable::check_phase1() {
 
     if (classes_ == nullptr) {
@@ -313,6 +312,7 @@ void ClassTable::check_phase1() {
     check_cycle();
 }
 
+// check other information
 void ClassTable::check_phase2() {
 
 }
@@ -349,8 +349,6 @@ ostream& ClassTable::semant_error()
     return error_stream;
 }
 
-
-
 /*   This is the entry point to the semantic checker.
 
      Your checker should do the following two things:
@@ -375,12 +373,9 @@ void program_class::semant()
     classtable->check_phase1();
     // semantic analysis phase 2, check others.
     classtable->check_phase2();
-    /* some semantic analysis code may go here */
 
     if (classtable->errors()) {
-	cerr << "Compilation halted due to static semantic errors." << endl;
-	exit(1);
+    	cerr << "Compilation halted due to static semantic errors." << endl;
+	    exit(1);
     }
 }
-
-
