@@ -5,6 +5,7 @@
 #include <stdarg.h>
 #include <vector>
 #include <unordered_map>
+#include <functional>
 #include <queue>
 #include "semant.h"
 #include "utilities.h"
@@ -190,6 +191,11 @@ void ClassTable::install_basic_classes() {
     graph_[Int] = Object;
     graph_[Bool] = Object;
     graph_[Str] = Object;
+    symbol_to_class_[Object] = Object_class;
+    symbol_to_class_[IO] = IO_class;
+    symbol_to_class_[Int] = Int_class;
+    symbol_to_class_[Bool] = Bool_class;
+    symbol_to_class_[Str] = Str_class;
 }
 
 void ClassTable::install_user_classes() {
@@ -265,6 +271,12 @@ void ClassTable::install_user_classes() {
         semant_error() << "Class Main is not defined." << std::endl;
         abort();
     }
+
+    // add to symbol_to_class_
+    for (int i = classes_->first(); classes_->more(i); i = classes_->next(i))  {
+        auto cur_class = dynamic_cast<class__class*>(classes_->nth(i));
+        symbol_to_class_[cur_class->get_name()] = cur_class;
+    }
 }
 
 
@@ -312,12 +324,109 @@ void ClassTable::check_phase1() {
     check_cycle();
 }
 
+// Build inheritance graph from top to down.
+void ClassTable::buildGraphTopDown() {
+    for (auto& [k, v] : graph_) {
+        if (k == Object) continue;
+        graph_rev_[v].push_back(k);
+    }
+}
+
+
+
+// collect all methods and check the correction of override.
+// check all attr is not override!
+void ClassTable::collectAndCheckAllMethod() {
+    SymTable<Symbol, std::pair<std::pair<Formals, Symbol>>> func_table;
+    SymTable<Symbol, Symbol> attr_table;
+
+    std::function<void(Symbol)> dfs = [&](Symbol cur_class) {
+        func_table.enterScope();
+        attr_table.enterScope();
+        class__class* t = symbol_to_class_[cur_class];
+        Features features = t->get_features();
+        for (int i = features->first(); features->more(i); i = features->next(i)) {
+            if (cur_feature->getType() == FeatureType::METHOD) {
+                // check override method
+                method_class* cur_method = dynamic_cast<method_class*>(features->nth(i));
+                Symbol method_name = cur_method->getName();
+                Formals formals = cur_method->getFormals();
+                Symnbol ret_type = cur_method->getRetType();
+                // check whether same function def in this class
+                auto find_res = func_table.probe(method_name);
+                if (!find_res) {
+                    // TODO
+                    semant_error() << "define same method in this class" << std::endl;
+                    abort();
+                }
+                find_res = func_table.lookUp(method_name);
+                if (find_res) {
+                    // check arg number, arg type and ret type.
+                    Formals old_formals = find_res.value().first;
+                    Symbol old_ret_type = find_res.value().second;
+
+                    // check arg number
+                    if (old_formals->len() != formals->len()) {
+                        // TODO
+                        semant_error() << "override with different arg number" << std::endl;
+                        abort();
+                    }
+
+                    // check arg type
+                    for (int j = 0; j < old_formals->len(); ++j) {
+                        Formal old_formal = old_formals->nth(j);
+                        Formal cur_formal = formals->nth(j);
+                        if (!old_formal->equal(cur_formal)) {
+                            // TODO
+                            semant_error() << "override with different arg type" << std::endl;
+                            abort();
+                        }
+                    }
+
+                    // check ret type
+                    if (old_ret_type != ret_type) {
+                        semant_error() << "override with different return type" << std::endl;
+                        abort();
+                    }
+
+                }
+
+                // add this method to funtable
+                env_.addFuncSig(t->get_filename(),
+                                method_name,
+                                formals,
+                                ret_type);
+                func_table.add(method, {formals, ret_type});
+            } else {
+                // check attr override
+                attr_class* attr = dynamic_cast<attr_class*>(features->nth(j));
+                if (attr_table.lookUp(attr->getName())) {
+                    semant_error() << "redefined attr!" << std::endl;
+                    abort();
+                }
+                attr_table.add(attr->getName(), attr->getType());
+            }
+        }
+
+        // check children
+        for (auto child : graph_rev_[cur_class]) {
+            dfs(child);
+        }
+        func_table.existScope();
+        attr_table.existScope();
+    };
+
+    dfs(Object);
+}
 
 // check other information
 void ClassTable::check_phase2() {
-
-
-
+    buildGraphTopDown();
+    collectAllMethod();
+    // iter all class and check type
+    for (int i = classes_->first(); classes_->more(i); i = classes_->next(i)) {
+        classes_->nth(i)->typeCheck(env_);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////
