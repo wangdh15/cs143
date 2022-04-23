@@ -41,6 +41,7 @@ private:
     cerr << "Compilation halted due to static semantic errors." << endl;
 	  exit(1);
   }
+
   ostream& error_stream;
 
   Classes classes_;

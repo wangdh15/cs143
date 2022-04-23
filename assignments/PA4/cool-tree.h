@@ -9,10 +9,13 @@
 //////////////////////////////////////////////////////////
 
 
+#include "semant.h"
 #include "tree.h"
 #include "cool-tree.handcode.h"
 #include <unordered_map>
 #include <vector>
+
+class ClassTable;
 
 template<typename K, typename V>
 class SymTable {
@@ -92,7 +95,7 @@ public:
    }
 
    // look up the type of a symbol
-   Symbol lookUp(Symbol name) {
+   std::optional<Symbol> lookUp(Symbol name) {
    return name_scope_.lookUp(name);
    }
 
@@ -154,7 +157,7 @@ public:
    tree_node *copy()		 { return copy_Class_(); }
    virtual Class_ copy_Class_() = 0;
 
-   virtual void typeCheck(Enviro& env) = 0;
+   virtual void typeCheck(ClassTable& class_table,  Enviro& env) = 0;
 #ifdef Class__EXTRAS
    Class__EXTRAS
 #endif
@@ -169,7 +172,7 @@ public:
    tree_node *copy()		 { return copy_Feature(); }
    virtual Feature copy_Feature() = 0;
    virtual void getType() = 0;
-   virtual void typeCheck(Enviro &env) = 0;
+   virtual void typeCheck(ClassTable& class_table,  Enviro &env) = 0;
 
 #ifdef Feature_EXTRAS
    Feature_EXTRAS
@@ -205,7 +208,7 @@ public:
    tree_node *copy()		 { return copy_Expression(); }
    virtual Expression copy_Expression() = 0;
 
-   virtual Symbol typeCheck(Enviro &env) = 0;
+   virtual Symbol typeCheck(ClassTable& class_table,  Enviro &env) = 0;
 #ifdef Expression_EXTRAS
    Expression_EXTRAS
 #endif
@@ -301,23 +304,7 @@ public:
       return filename;
    }
 
-   void typeCheck(Enviro& env) override {
-      // Add newscope and push attr
-      env.enterScope();
-      env.setCurClass(name);
-      for (int i = features->first(); features->more(i); i = features->next(i)) {
-         if (features->nth(i)->getType() == FeatureType::ATTR) {
-            attr_class* cur_attr = dynamic_cast<attr_class*>(features->nth(i));
-            env.addVar(cur_attr->getName(), cur_attr->getDeclType());
-         }
-      }
-      // check attr and method
-      for (int i = features->first(); features->more(i); i = features->next(i)) {
-         features->nth(i)->typeCheck(env);
-      }
-      // clear the attr
-      env.existScope();
-   }
+   void typeCheck(ClassTable& class_table,  Enviro& env) override;
 
 #ifdef Class__SHARED_EXTRAS
    Class__SHARED_EXTRAS
@@ -369,12 +356,7 @@ public:
       return expr;
    }
 
-   void typeCheck(Enviro &env) override {
-      Symbol expr_type = expr->typeCheck(env);
-      if (!checkSubClass(return_type, expr_type)) {
-         // TODO type mismatch;
-      }
-   }
+   void typeCheck(ClassTable& class_table,  Enviro &env) override;
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -404,12 +386,7 @@ public:
       return FeatureType::ATTR;
    }
 
-   void typeCheck(Enviro &env) override {
-      Symbol init_type = init->typeCheck(env);
-      if (!checkSubClass(type_decl, init_type)) {
-         //TODO type mismatch.
-      }
-   }
+   void typeCheck(ClassTable& class_table,  Enviro &env) override;
 
    Symbol getName() const {
       return name;
@@ -494,9 +471,7 @@ public:
    Expression copy_Expression();
    void dump(ostream& stream, int n);
 
-   Symbol typeCheck(Enviro &env) override {
-      Symbol expr_type = expr->typeCheck(env);
-   }
+   Symbol typeCheck(ClassTable& class_table,  Enviro &env) override;
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -547,6 +522,8 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+
+   Symbol typeCheck(ClassTable& class_table,  Enviro &env) override;
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
@@ -876,6 +853,7 @@ public:
    Expression copy_Expression();
    void dump(ostream& stream, int n);
 
+   Symbol typeCheck(ClassTable& class_table,  Enviro &env) override;
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
 #endif
@@ -896,6 +874,7 @@ public:
    Expression copy_Expression();
    void dump(ostream& stream, int n);
 
+   Symbol typeCheck(ClassTable& class_table,  Enviro &env) override;
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
 #endif
@@ -916,6 +895,7 @@ public:
    Expression copy_Expression();
    void dump(ostream& stream, int n);
 
+   Symbol typeCheck(ClassTable& class_table,  Enviro &env) override;
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
 #endif
@@ -935,7 +915,8 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
-
+  
+   Symbol typeCheck(ClassTable& class_table,  Enviro &env) override;
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
 #endif

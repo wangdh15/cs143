@@ -3,10 +3,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <type_traits>
 #include <vector>
 #include <unordered_map>
 #include <functional>
 #include <queue>
+#include "cool-tree.h"
 #include "semant.h"
 #include "utilities.h"
 
@@ -85,6 +87,135 @@ static void initialize_constants(void)
     val         = idtable.add_string("_val");
 }
 
+// implement the typeCheck method of cool-tree.h
+
+void class__class::typeCheck(ClassTable& class_table, Enviro& env) {
+    // Add newscope and push attr
+      env.enterScope();
+      env.setCurClass(name);
+      // add self to scope
+      env.addVar(self, name);
+      for (int i = features->first(); features->more(i); i = features->next(i)) {
+         if (features->nth(i)->getType() == FeatureType::ATTR) {
+            attr_class* cur_attr = dynamic_cast<attr_class*>(features->nth(i));
+            env.addVar(cur_attr->getName(), cur_attr->getDeclType());
+         }
+      }
+      // check attr and method
+      for (int i = features->first(); features->more(i); i = features->next(i)) {
+         features->nth(i)->typeCheck(class_table, env);
+      }
+      // clear the attr
+      env.existScope();
+      // the cur_class will be set by other class
+}
+
+
+void method_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+        // add new scope
+      env.enterScope();
+      for (int i = formals->begin(); formals->more(i); i = formals->next(i)) {
+          Formal cur_formal = formals->nth(i);
+          env.addVar(cur_formal->getName(), cur_formal->getTypeDecl());
+      }
+      Symbol expr_type = expr->typeCheck(class_table, env);
+      if (!checkSubClass(return_type, expr_type)) {
+         // TODO type mismatch;
+      }
+      env.existScope();
+}
+
+
+void attr_class::typeCheck(ClassTable& class_table, Enviro& env) {
+    Symbol init_type = init->typeCheck(class_table, env);
+    if (!checkSubClass(type_decl, init_type)) {
+        class_table->semant_error() << "attr init error with dismatch type: decl type is" << type_decl << " expr type is: " << init_type << std::endl;
+    }
+}
+
+Symbol assign_class::typeCheck(ClassTable& class_table,  Enviro &env) override {
+      Symbol expr_type = expr->typeCheck(class_table, env);
+      auto decl_type = env.lookUp(name);
+      if (!decl_type) {
+          class_table.semant_error() << "Assign Expr: Symbol " << name << " is not defined." << std::endl;
+        set_type(Object);  
+      } else {
+          set_type(decl_type.value());
+      }
+      return get_type();
+}
+
+
+
+Symbol bool_const_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    set_type(Bool);
+    return Bool;
+}
+
+
+Symbol int_const_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    set_type(Int);
+    return Int;
+}
+
+
+
+Symbol string_const_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    set_type(String);
+    return String;
+}
+
+
+Symbol new__class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    if (type_name == SELF_TYPE) {
+        set_type(env.getCurClass());
+    } else {
+        set_type(type_name);
+    }
+    return get_type();
+}
+
+static check_formal_with_expr(ClassTable& class_table, Formals formals, Expressions actual) {
+
+}
+
+
+Symbol dispatch_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    
+    Symbol expr_type = expr->typeCheck(class_table, env);
+    auto find_result = env.getFuncSig(expr_type, name);
+    if (!find_result) {
+        class_table.semant_error() << "Dispatch Class: Cannot find method " << expr_type << "::" << name << std::endl;
+        set_type(Object);
+        return get_type();
+    } 
+
+    Formals formals = find_result.value().first();
+    Symbol ret_type = find_result.value().second();
+    if (actual->len() != formals->len()) {
+        class_table.semant_error() << "Dispatch Class: formal len dismatch with args len, formal len:" << formals->len() << \
+            ", args len: " << actual->len() << std::endl;
+        set_type(Object);
+        return get_type();
+    } 
+    
+    std::vector<Symbol> actual_types;
+    for (int i = 0; i < actual->len(); ++i) {
+        actual_types.push_back(actual->typeCheck(class_table, env));
+    } 
+    for (int i = 0; i < actual_types.size(); ++i) {
+        if (!checkSubClass(actual_types[i], formals->nth(i))) {
+            class_table.semant_error() << "Dispatch Class: arg and formal dismatch: arg type: " << actual_types[i] << \
+              " formal type: "  << formals->nth(i) << std::endl;
+            set_type(Object);
+            return get_type();
+        }
+    }
+
+    
+
+
+}
 
 
 ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr), classes_(classes) {
