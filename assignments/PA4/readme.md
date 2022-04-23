@@ -53,3 +53,121 @@ Type Environment:
 
 如果一个函数内部发生了对另外一个函数的调用，则只需要比较传入的类型，以及申明的类型
 是否匹配即可。
+
+检查的内容：
+1. 子类不可以重写父类的属性。
+2. 子类可以重写父类的方法，但是方法的形参个数、形参类型以及返回值类型必须要完全一致。
+
+
+1. class__class 检查的逻辑：
+    - 将当前类的attr加入到namespace中（包括自己父类的）
+    - 检查自己的attr的合法性
+    - 检查自己的method的合法性
+
+2. attr__class 检查逻辑：
+    （需要加入self关键字）
+    - 获取expr的类型
+    - 检查expr的类型和自己声明的类型是否符合条件（表达式类型 <= 声明类型）
+
+3. method__class 检查逻辑：
+    （需要加入self关键字）
+    - 获取expr的类型
+    - 检查expr的类型和自己的返回类型是否符合条件
+
+4. assign 检查逻辑：
+    - 根据当前环境获取到对应的name的声明类型
+    - 获取expr的类型
+    - 检查expr的类型和name声明类型的合法性
+
+5. bool_const_class:
+    - 直接返回Bool类型
+
+6. int_const_class:
+    - 直接返回Int类型
+
+7. string_const_class:
+    - 直接返回String类型
+
+8. new__class:
+    - 如果type_name为SELF_TYPE，则返回C
+    - 否则的话，返回type_name.(这里需不需要判断type存在？)
+
+9. dispatch_class:
+    - 获取expr的类型
+    - 获取actual的类型
+    - 根据expr的类别，获取调用对象的类型 （SELF_TYPE）
+    - 获取name对应的函数签名
+    - 检查actubal的个数以及类型和函数签名是否匹配
+    - 根据函数签名的类比，返回对应的类型（SELF_TYPE）
+
+10. static_dispatch_class:
+    - 获取expr的类型
+    - 获取actual的类型
+    - 判断expr的类型和type_name的类型符合要求
+    - 根据type_name和name获取对应的函数签名
+    - 判断actual的类型和函数签名的类型是否匹配
+    - 根据函数签名返回值类型，返回对应的类型（SELF_TYPE）
+
+11. cond_class:
+    - 获取pred的类型，并检查是否为Bool
+    - 获取then_exp的类型，else_exp的类型
+    - 求得then_exp和else_exp的最近公共祖先，作为返回值类型
+
+12. block_class:
+    - 逐个获取body的各个表达式的类型
+    - 返回最后一个表达式的类型
+
+13. let_class:
+    - 获取init的类型（无表达式的话，算都合法）
+    - 获取type_decl的类型（需要考虑SELF_TYPE）
+    - 检查type_decl和init类型是否匹配
+    - 增加一个新的scope，将identifier加入
+    - 获取body的类型
+    - 返回body的类型
+
+14. typcase_class:
+    - 获取到expr的类型
+    - 获取到各个cases的类型
+    - 求这些cases的最近公共祖先，作为返回的类型
+
+15. branch_class:
+    - 进入一个新的scope，将name类型指定为type_decl，
+    - 获取expr的类型
+    - 退出scope，返回expr的类型
+
+16. loop_class:
+    - 获取pred的类型，确保为Bool
+    - 获取body的类型
+    - 返回Object类型
+
+17. isvoid_class:
+    - 检查e1的类型
+    - 返回Bool
+
+18. comp_class:
+    - 检查e1的类型，确保为Bool
+    - 返回Bool
+
+19. lt_class, leq_class:
+    - 检查e1的类型，确保为Int
+    - 检查e2的类型，确保为Int
+    - 返回Bool
+
+20. neg_class:
+    - 检查e1的类型，确保为Int
+    - 返回Int
+
+21. add_class, minus_class, mul_class, divide_class:
+    - 检查e1, e2类型，确保为Int
+    - 返回类型Int
+
+22. eq_class:
+    - 检查e1类型，e2类型
+    - T1, T2在 {Int, String, Bool}之中，且T1 == T2
+    - 返回Bool
+
+23.
+
+ comp_class:
+    - 获取e1的类型，检查是否为Bool
+    - 返回Bool类型
