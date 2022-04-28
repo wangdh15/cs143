@@ -1,5 +1,6 @@
 
 
+#include <cstdlib>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -7,8 +8,11 @@
 #include <vector>
 #include <unordered_map>
 #include <functional>
+#include <algorithm>
 #include <queue>
+#include <unordered_set>
 #include "cool-tree.h"
+#include "cool-tree.handcode.h"
 #include "semant.h"
 #include "utilities.h"
 
@@ -88,15 +92,85 @@ static void initialize_constants(void)
 }
 
 // implement the typeCheck method of cool-tree.h
+std::optional<std::pair<Formals, Symbol>> Enviro::getFuncSig(Symbol class_name, Symbol method_name) {
+      Symbol cur_class = class_name == SELF_TYPE? cur_class_ : class_name;
+      while (cur_class != No_class) {
+
+         auto find_res1 = method_signatures_.find(cur_class);
+         if (find_res1 == method_signatures_.end()) {
+            cur_class = inherit_graph_[cur_class];
+            continue;
+         }
+         auto find_res2 = find_res1->second.find(method_name);
+         if (find_res2 == find_res1->second.end()) {
+            cur_class = inherit_graph_[cur_class];
+            continue;
+         }
+         return find_res2->second;
+      }
+      return {};
+}
+// check whether class1 is the child of class2
+bool Enviro::checkSubClass(Symbol class1, Symbol class2)  {
+    class1 = class1 == SELF_TYPE ? cur_class_ : class1;
+    class2 = class2 == SELF_TYPE ? cur_class_ : class2;
+    if (class1 == No_type) return true;
+    Symbol cur = class1;
+    while (cur != class2 && cur != Object) {
+        cur = inherit_graph_[cur];
+    }
+    if (cur == class2) return true;
+    else return false;
+}
+
+// find the lca of classes.
+Symbol Enviro::getLca(const std::vector<Symbol>& classes)  {
+    const int n = classes.size();
+    std::vector<std::vector<Symbol>> paths(n);
+    for (int i = 0; i < n; ++i) {
+        Symbol cur = classes[i] == SELF_TYPE? cur_class_ : classes[i];
+        while (cur != Object) {
+            paths[i].push_back(cur);
+            cur = inherit_graph_[cur];
+        }
+    }
+    for (auto& x : paths) {
+        std::reverse(x.begin(), x.end());
+    }
+    Symbol ans = Object;
+    for (int i = 0; i < paths[0].size(); ++i) {
+        bool flag = true;
+        Symbol cur = paths[0][i];
+        for (int j = 0; j < paths.size(); ++j) {
+            if (paths[j].size() <= i || paths[j][i] != cur) {
+                flag = false;
+                break;
+            }
+        }
+        if (!flag) break;
+        else ans = cur;
+    }
+
+    if (semant_debug) {
+        std::cerr << "find lca!" << std::endl;
+        for (auto x : classes) {
+            std::cerr << x << "|";
+        }
+        std::cout << std::endl;
+        std::cout << ans << std::endl;
+    }
+
+    return ans;
+}
 
 void class__class::typeCheck(ClassTable& class_table, Enviro& env) {
     // Add newscope and push attr
-      env.enterScope();
+      env.newScope();
       env.setCurClass(name);
       // add self to scope
       env.addVar(self, name);
       for (int i = features->first(); features->more(i); i = features->next(i)) {
-         if (features->nth(i)->getType() == FeatureType::ATTR) {
+         if (features->nth(i)->getType() == FeatureType::ATTR_) {
             attr_class* cur_attr = dynamic_cast<attr_class*>(features->nth(i));
             env.addVar(cur_attr->getName(), cur_attr->getDeclType());
          }
@@ -105,42 +179,64 @@ void class__class::typeCheck(ClassTable& class_table, Enviro& env) {
       for (int i = features->first(); features->more(i); i = features->next(i)) {
          features->nth(i)->typeCheck(class_table, env);
       }
+
+     std::vector<Symbol> child = class_table.getChild(name);
+     for (auto x : child) {
+         class_table.getClass(x).value()->typeCheck(class_table, env);
+     }
+
       // clear the attr
-      env.existScope();
+      env.exitScope();
       // the cur_class will be set by other class
 }
 
 
 void method_class::typeCheck(ClassTable& class_table,  Enviro &env) {
         // add new scope
-      env.enterScope();
-      for (int i = formals->begin(); formals->more(i); i = formals->next(i)) {
+      env.newScope();
+      std::unordered_set<Symbol> se;
+      for (int i = formals->first(); formals->more(i); i = formals->next(i)) {
           Formal cur_formal = formals->nth(i);
+          if (se.find(cur_formal->getName()) != se.end()) {
+            class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Formal parameter " << cur_formal->getName() << " is multiply defined." << std::endl;
+          }
+          se.insert(cur_formal->getName());
           env.addVar(cur_formal->getName(), cur_formal->getTypeDecl());
       }
       Symbol expr_type = expr->typeCheck(class_table, env);
-      if (!checkSubClass(return_type, expr_type)) {
+      if (return_type == SELF_TYPE && (expr_type != SELF_TYPE && expr_type != No_type) || !env.checkSubClass(expr_type, return_type)) {
          // TODO type mismatch;
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Infered return type " << expr_type << " of method " << name << " does not " \
+            << " conform to declared return type " << return_type << std::endl;
       }
-      env.existScope();
+      env.exitScope();
 }
 
 
 void attr_class::typeCheck(ClassTable& class_table, Enviro& env) {
     Symbol init_type = init->typeCheck(class_table, env);
-    if (!checkSubClass(type_decl, init_type)) {
-        class_table->semant_error() << "attr init error with dismatch type: decl type is" << type_decl << " expr type is: " << init_type << std::endl;
+    if (!env.checkSubClass(init_type, type_decl)) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "attr init error with dismatch type: decl type is" << type_decl << " expr type is: " << init_type << std::endl;
     }
 }
 
-Symbol assign_class::typeCheck(ClassTable& class_table,  Enviro &env) override {
+Symbol assign_class::typeCheck(ClassTable& class_table,  Enviro &env)  {
+      if (name == self) {
+          class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Cannot assign to self" << std::endl;
+      }
       Symbol expr_type = expr->typeCheck(class_table, env);
       auto decl_type = env.lookUp(name);
       if (!decl_type) {
-          class_table.semant_error() << "Assign Expr: Symbol " << name << " is not defined." << std::endl;
-        set_type(Object);  
+          class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Assign Expr: Symbol " << name << " is not defined." << std::endl;
+        set_type(Object);
       } else {
-          set_type(decl_type.value());
+          if (!env.checkSubClass(expr_type, decl_type.value())) {
+              class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) <<  "Type " << expr_type << " of assigned expression does not conform to declared "
+                << "type " << decl_type.value() << " of identifier " << name << std::endl;
+              set_type(Object);
+          } else {
+            set_type(decl_type.value());
+          }
       }
       return get_type();
 }
@@ -161,62 +257,349 @@ Symbol int_const_class::typeCheck(ClassTable& class_table,  Enviro &env) {
 
 
 Symbol string_const_class::typeCheck(ClassTable& class_table,  Enviro &env) {
-    set_type(String);
-    return String;
+    set_type(Str);
+    return Str;
 }
 
 
 Symbol new__class::typeCheck(ClassTable& class_table,  Enviro &env) {
-    if (type_name == SELF_TYPE) {
-        set_type(env.getCurClass());
-    } else {
-        set_type(type_name);
-    }
+    set_type(type_name);
     return get_type();
 }
 
-static check_formal_with_expr(ClassTable& class_table, Formals formals, Expressions actual) {
-
-}
-
-
 Symbol dispatch_class::typeCheck(ClassTable& class_table,  Enviro &env) {
-    
+
     Symbol expr_type = expr->typeCheck(class_table, env);
     auto find_result = env.getFuncSig(expr_type, name);
     if (!find_result) {
-        class_table.semant_error() << "Dispatch Class: Cannot find method " << expr_type << "::" << name << std::endl;
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Dispatch Class: Cannot find method " << expr_type << "::" << name << std::endl;
         set_type(Object);
         return get_type();
-    } 
+    }
 
-    Formals formals = find_result.value().first();
-    Symbol ret_type = find_result.value().second();
+    Formals formals = find_result.value().first;
+    Symbol ret_type = find_result.value().second;
     if (actual->len() != formals->len()) {
-        class_table.semant_error() << "Dispatch Class: formal len dismatch with args len, formal len:" << formals->len() << \
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Dispatch Class: formal len dismatch with args len, formal len:" << formals->len() << \
             ", args len: " << actual->len() << std::endl;
         set_type(Object);
         return get_type();
-    } 
-    
+    }
+
     std::vector<Symbol> actual_types;
     for (int i = 0; i < actual->len(); ++i) {
-        actual_types.push_back(actual->typeCheck(class_table, env));
-    } 
+        actual_types.push_back(actual->nth(i)->typeCheck(class_table, env));
+    }
     for (int i = 0; i < actual_types.size(); ++i) {
-        if (!checkSubClass(actual_types[i], formals->nth(i))) {
-            class_table.semant_error() << "Dispatch Class: arg and formal dismatch: arg type: " << actual_types[i] << \
+        if (!env.checkSubClass(actual_types[i], formals->nth(i)->getTypeDecl())) {
+            class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Dispatch Class: arg and formal dismatch: arg type: " << actual_types[i] << \
               " formal type: "  << formals->nth(i) << std::endl;
             set_type(Object);
             return get_type();
         }
     }
 
-    
+    if (ret_type == SELF_TYPE) {
+        set_type(expr_type);
+     } else {
+        set_type(ret_type);
+     }
+     return get_type();
+}
 
+
+Symbol static_dispatch_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    Symbol expr_type = expr->typeCheck(class_table, env);
+    if (!env.checkSubClass(expr_type, type_name)) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Static dispatch error! type dismatch! real: " << \
+           expr_type << " Expect: " << type_name << std::endl;
+       set_type(Object);
+       return get_type();
+    }
+
+    auto find_result = env.getFuncSig(type_name, name);
+    if (!find_result) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Dispatch Class: Cannot find method " << expr_type << "::" << name << std::endl;
+        set_type(Object);
+        return get_type();
+    }
+
+    Formals formals = find_result.value().first;
+    Symbol ret_type = find_result.value().second;
+    if (actual->len() != formals->len()) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Dispatch Class: formal len dismatch with args len, formal len:" << formals->len() << \
+            ", args len: " << actual->len() << std::endl;
+        set_type(Object);
+        return get_type();
+    }
+
+    std::vector<Symbol> actual_types;
+    for (int i = 0; i < actual->len(); ++i) {
+        actual_types.push_back(actual->nth(i)->typeCheck(class_table, env));
+    }
+    for (int i = 0; i < actual_types.size(); ++i) {
+        if (!env.checkSubClass(actual_types[i], formals->nth(i)->getTypeDecl())) {
+            class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Dispatch Class: arg and formal dismatch: arg type: " << actual_types[i] << \
+              " formal type: "  << formals->nth(i) << std::endl;
+            set_type(Object);
+            return get_type();
+        }
+    }
+
+    if (ret_type == SELF_TYPE) {
+        set_type(expr_type);
+    } else {
+        set_type(ret_type);
+    }
+    return get_type();
+}
+
+
+Symbol cond_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    Symbol pred_type = pred->typeCheck(class_table, env);
+    if (pred_type != Bool) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "cond_class: Pred_type is not Bool, it is " << pred_type << std::endl;
+        set_type(Object);
+        return Object;
+    }
+
+    Symbol then_expr_type = then_exp->typeCheck(class_table, env);
+    Symbol else_exp_type = else_exp->typeCheck(class_table, env);
+    set_type(env.getLca({then_expr_type, else_exp_type}));
+    return get_type();
+}
+
+
+Symbol block_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+
+    Symbol ret_type = No_type;
+    for (int i = body->first(); body->more(i); i = body->next(i)) {
+        ret_type = body->nth(i)->typeCheck(class_table, env);
+    }
+    set_type(ret_type);
+    return ret_type;
+}
+
+
+Symbol let_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+
+   Symbol init_type = init->typeCheck(class_table, env);
+   if (init_type != No_type && !env.checkSubClass(init_type, type_decl)) {
+       class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "let class type mismatch: init_type: " << \
+           init_type << " type_decl is " << type_decl << std::endl;
+   }
+   env.newScope();
+   if (identifier == self) {
+       class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "\'self\' cannot be bound in a \'let\' expression." << std::endl;
+   } else {
+       env.addVar(identifier, type_decl);
+   }
+   Symbol ret_type = body->typeCheck(class_table, env);
+   env.exitScope();
+   set_type(ret_type);
+   return get_type();
+}
+
+
+Symbol typcase_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+
+    Symbol expr_type = expr->typeCheck(class_table, env);
+
+
+    // check each branch has different type
+
+    std::unordered_set<Symbol> se;
+    for (int i = cases->first(); cases->more(i); i = cases->next(i)) {
+        auto case_ = dynamic_cast<branch_class*>(cases->nth(i));
+        if (se.find(case_->getTypeDecl()) != se.end()) {
+            class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Duplicate branch " << case_->getTypeDecl() << " in case statement." << std::endl;
+        }
+        se.insert(case_->getTypeDecl());
+    }
+
+    std::vector<Symbol> branch_types;
+    for (int i = cases->first(); cases->more(i); i = cases->next(i)) {
+       branch_types.push_back(cases->nth(i)->typeCheck(class_table, env));
+    }
+
+    Symbol ret_type = env.getLca(branch_types);
+    set_type(ret_type);
+    return get_type();
 
 }
 
+
+Symbol branch_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+
+    env.newScope();
+    env.addVar(name, type_decl);
+    Symbol ret_type = expr->typeCheck(class_table, env);
+    env.exitScope();
+    return ret_type;
+}
+
+
+Symbol loop_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+
+    Symbol pred_type = pred->typeCheck(class_table, env);
+    if (pred_type != Bool) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "loop class check error: " << pred_type << " is not Bool" << std::endl;
+    }
+    Symbol expr_type = body->typeCheck(class_table, env);
+    set_type(Object);
+    return get_type();
+
+}
+
+Symbol isvoid_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    e1->typeCheck(class_table, env);
+    set_type(Bool);
+    return get_type();
+}
+
+
+Symbol comp_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    Symbol tmp_type = e1->typeCheck(class_table, env);
+
+    if (tmp_type != Bool) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Comp class: e1 type is not Bool, is " << tmp_type << std::endl;
+        set_type(Object);
+    } else {
+        set_type(Bool);
+    }
+    return get_type();
+
+}
+
+
+Symbol lt_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    Symbol e1_type = e1->typeCheck(class_table, env);
+    Symbol e2_type = e2->typeCheck(class_table, env);
+    if (e1_type != Int || e2_type != Int) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "lt class error: e1 type: " << e1_type  \
+            << "e2 type: " << e2_type << std::endl;
+        set_type(Object);
+    } else {
+        set_type(Bool);
+    }
+    return get_type();
+}
+
+Symbol leq_class::typeCheck(ClassTable& class_table, Enviro &env) {
+    Symbol e1_type = e1->typeCheck(class_table, env);
+    Symbol e2_type = e2->typeCheck(class_table, env);
+    if (e1_type != Int || e2_type != Int) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "lt class error: e1 type: " << e1_type  \
+            << "e2 type: " << e2_type << std::endl;
+        set_type(Object);
+    } else {
+        set_type(Bool);
+    }
+    return get_type();
+}
+
+Symbol neg_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+
+    Symbol e1_type = e1->typeCheck(class_table, env);
+    if (e1_type != Int) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "neg_class error: e1 type is " << e1_type << std::endl;
+        set_type(Object);
+    } else {
+        set_type(Int);
+    }
+    return get_type();
+
+}
+
+
+Symbol plus_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    Symbol e1_type = e1->typeCheck(class_table, env);
+    Symbol e2_type = e2->typeCheck(class_table, env);
+    if (e1_type != Int || e2_type != Int) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "plus class error: e1 type: " << e1_type  \
+            << " e2 type is " << e2_type << std::endl;
+        set_type(Object);
+    }  else {
+        set_type(Int);
+    }
+    return get_type();
+}
+
+Symbol sub_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    Symbol e1_type = e1->typeCheck(class_table, env);
+    Symbol e2_type = e2->typeCheck(class_table, env);
+    if (e1_type != Int || e2_type != Int) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "plus class error: e1 type: " << e1_type  \
+            << " e2 type is " << e2_type << std::endl;
+        set_type(Object);
+    }  else {
+        set_type(Int);
+    }
+    return get_type();
+}
+
+Symbol mul_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    Symbol e1_type = e1->typeCheck(class_table, env);
+    Symbol e2_type = e2->typeCheck(class_table, env);
+    if (e1_type != Int || e2_type != Int) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "plus class error: e1 type: " << e1_type  \
+            << " e2 type is " << e2_type << std::endl;
+        set_type(Object);
+    }  else {
+        set_type(Int);
+    }
+    return get_type();
+}
+
+Symbol divide_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    Symbol e1_type = e1->typeCheck(class_table, env);
+    Symbol e2_type = e2->typeCheck(class_table, env);
+    if (e1_type != Int || e2_type != Int) {
+        class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "plus class error: e1 type: " << e1_type  \
+            << " e2 type is " << e2_type << std::endl;
+        set_type(Object);
+    }  else {
+        set_type(Int);
+    }
+    return get_type();
+}
+
+Symbol eq_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    Symbol e1_type = e1->typeCheck(class_table, env);
+    Symbol e2_type = e2->typeCheck(class_table, env);
+    if (e1_type == Int || e1_type == Str || e1_type == Bool || e2_type == Int || e2_type == Str || e2_type == Bool) {
+        if(e1_type != e2_type) {
+            class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "eq class type error: e1 type is " << e1_type  \
+                << " e2 type is " << e2_type << std::endl;
+            set_type(Object);
+        } else {
+            set_type(Bool);
+        }
+    } else {
+        set_type(Bool);
+    }
+    return get_type();
+}
+
+Symbol no_expr_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    set_type(No_type);
+    return get_type();
+}
+
+Symbol object_class::typeCheck(ClassTable& class_table,  Enviro &env) {
+    if (name == self) {
+        set_type(SELF_TYPE);
+    } else {
+        auto find_result = env.lookUp(name);
+        if (!find_result) {
+            class_table.semant_error(class_table.getClass(env.getCurClass()).value()->get_filename(), this) << "Undeclared identifier " << name << std::endl;
+            set_type(Object);
+         } else {
+          set_type(find_result.value());
+        }
+    }
+    return get_type();
+}
 
 ClassTable::ClassTable(Classes classes) : semant_errors(0) , error_stream(cerr), classes_(classes) {
     install_basic_classes();
@@ -322,11 +705,11 @@ void ClassTable::install_basic_classes() {
     graph_[Int] = Object;
     graph_[Bool] = Object;
     graph_[Str] = Object;
-    symbol_to_class_[Object] = Object_class;
-    symbol_to_class_[IO] = IO_class;
-    symbol_to_class_[Int] = Int_class;
-    symbol_to_class_[Bool] = Bool_class;
-    symbol_to_class_[Str] = Str_class;
+    symbol_to_class_[Object] = dynamic_cast<class__class*>(Object_class);
+    symbol_to_class_[IO] = dynamic_cast<class__class*>(IO_class);
+    symbol_to_class_[Int] = dynamic_cast<class__class*>(Int_class);
+    symbol_to_class_[Bool] = dynamic_cast<class__class*>(Bool_class);
+    symbol_to_class_[Str] = dynamic_cast<class__class*>(Str_class);
 }
 
 void ClassTable::install_user_classes() {
@@ -468,7 +851,7 @@ void ClassTable::buildGraphTopDown() {
 // collect all methods and check the correction of override.
 // check all attr is not override!
 void ClassTable::collectAndCheckAllMethod() {
-    SymTable<Symbol, std::pair<std::pair<Formals, Symbol>>> func_table;
+    SymTable<Symbol, std::pair<Formals, Symbol>> func_table;
     SymTable<Symbol, Symbol> attr_table;
 
     std::function<void(Symbol)> dfs = [&](Symbol cur_class) {
@@ -477,17 +860,17 @@ void ClassTable::collectAndCheckAllMethod() {
         class__class* t = symbol_to_class_[cur_class];
         Features features = t->get_features();
         for (int i = features->first(); features->more(i); i = features->next(i)) {
-            if (cur_feature->getType() == FeatureType::METHOD) {
+            if (features->nth(i)->getType() == FeatureType::METHOD_) {
                 // check override method
                 method_class* cur_method = dynamic_cast<method_class*>(features->nth(i));
                 Symbol method_name = cur_method->getName();
                 Formals formals = cur_method->getFormals();
-                Symnbol ret_type = cur_method->getRetType();
+                Symbol ret_type = cur_method->getRetType();
                 // check whether same function def in this class
                 auto find_res = func_table.probe(method_name);
-                if (!find_res) {
+                if (find_res) {
                     // TODO
-                    semant_error() << "define same method in this class" << std::endl;
+                    semant_error(getClass(cur_class).value()->get_filename(), cur_method) << "define same method in this class" << std::endl;
                     abort();
                 }
                 find_res = func_table.lookUp(method_name);
@@ -499,9 +882,11 @@ void ClassTable::collectAndCheckAllMethod() {
                     // check arg number
                     if (old_formals->len() != formals->len()) {
                         // TODO
-                        semant_error() << "override with different arg number" << std::endl;
+                        semant_error(getClass(cur_class).value()->get_filename(), cur_method) << "override with different arg number" << std::endl;
                         abort();
                     }
+
+
 
                     // check arg type
                     for (int j = 0; j < old_formals->len(); ++j) {
@@ -509,33 +894,62 @@ void ClassTable::collectAndCheckAllMethod() {
                         Formal cur_formal = formals->nth(j);
                         if (!old_formal->equal(cur_formal)) {
                             // TODO
-                            semant_error() << "override with different arg type" << std::endl;
+                            semant_error(getClass(cur_class).value()->get_filename(), cur_method) << "override with different arg type" << std::endl;
                             abort();
                         }
                     }
 
                     // check ret type
                     if (old_ret_type != ret_type) {
-                        semant_error() << "override with different return type" << std::endl;
+                        semant_error(getClass(cur_class).value()->get_filename(), cur_method) << "override with different return type" << std::endl;
                         abort();
                     }
 
+                } else {
+                    // check formal type and return type exist.
+                    for (int j = formals->first(); formals->more(j); j = formals->next(j)) {
+                        Formal cur_formal = formals->nth(j);
+                        if (symbol_to_class_.find(cur_formal->getTypeDecl()) == symbol_to_class_.end()) {
+                            semant_error(getClass(cur_class).value()->get_filename(), cur_method) << "cannot find the arg type: " << cur_formal->getTypeDecl() << std::endl;
+                        }
+                    }
+                     if (ret_type != SELF_TYPE && symbol_to_class_.find(ret_type) == symbol_to_class_.end()) {
+                        semant_error(getClass(cur_class).value()->get_filename(), cur_method) << "cannot find the the ret type: " << ret_type << std::endl;
+                    }
                 }
-
+                // check arg name
+                for (int j = 0; j < formals->len(); ++j) {
+                        Formal cur_formal = formals->nth(j);
+                        if (semant_debug) {
+                            std::cerr << cur_formal->getName() << std::endl;
+                        }
+                        if (cur_formal->getName() == self) {
+                            semant_error(getClass(cur_class).value()->get_filename(), cur_method) << "formal arg cannot be self" << std::endl;
+                        }
+                    }
                 // add this method to funtable
-                env_.addFuncSig(t->get_filename(),
+                env_.addFuncSig(cur_class,
                                 method_name,
                                 formals,
                                 ret_type);
-                func_table.add(method, {formals, ret_type});
+                func_table.add(method_name, {formals, ret_type});
+
+                if (semant_debug) {
+                    std::cerr << "Insert Func to Env: " << cur_class << "::" << method_name << std::endl;
+                }
+
             } else {
                 // check attr override
-                attr_class* attr = dynamic_cast<attr_class*>(features->nth(j));
-                if (attr_table.lookUp(attr->getName())) {
-                    semant_error() << "redefined attr!" << std::endl;
+                attr_class* attr = dynamic_cast<attr_class*>(features->nth(i));
+                if (attr->getName() == self) {
+                    semant_error(symbol_to_class_[cur_class]) << "\'self\' cannot be the name of attribute." << std::endl;
                     abort();
                 }
-                attr_table.add(attr->getName(), attr->getType());
+                if (attr_table.lookUp(attr->getName())) {
+                    semant_error(symbol_to_class_[cur_class]) << "Attribute " << attr->getName() << " is an attribute of an inherited class." << std::endl;
+                    abort();
+                }
+                attr_table.add(attr->getName(), attr->get_decl_type());
             }
         }
 
@@ -543,8 +957,8 @@ void ClassTable::collectAndCheckAllMethod() {
         for (auto child : graph_rev_[cur_class]) {
             dfs(child);
         }
-        func_table.existScope();
-        attr_table.existScope();
+        func_table.exitScope();
+        attr_table.exitScope();
     };
 
     dfs(Object);
@@ -552,12 +966,25 @@ void ClassTable::collectAndCheckAllMethod() {
 
 // check other information
 void ClassTable::check_phase2() {
+
+    env_ = Enviro(graph_);
     buildGraphTopDown();
-    collectAllMethod();
-    // iter all class and check type
-    for (int i = classes_->first(); classes_->more(i); i = classes_->next(i)) {
-        classes_->nth(i)->typeCheck(env_);
+
+    if (semant_debug) {
+        std::cerr << "buidl graph end!" << std::endl;
     }
+
+    collectAndCheckAllMethod();
+
+    if (semant_debug) {
+        std::cerr << "Collect and check method end!" << std::endl;
+    }
+
+    getClass(Object).value()->typeCheck(*this, env_);
+    // iter all class and check type
+    // for (int i = classes_->first(); classes_->more(i); i = classes_->next(i)) {
+    //     classes_->nth(i)->typeCheck(*this, env_);
+    // }
 }
 
 ////////////////////////////////////////////////////////////////////
@@ -580,8 +1007,7 @@ ostream& ClassTable::semant_error(Class_ c)
     return semant_error(c->get_filename(),c);
 }
 
-ostream& ClassTable::semant_error(Symbol filename, tree_node *t)
-{
+ostream& ClassTable::semant_error(Symbol filename, tree_node *t) {
     error_stream << filename << ":" << t->get_line_number() << ": ";
     return semant_error();
 }
@@ -594,6 +1020,7 @@ ostream& ClassTable::semant_error()
 
 /*   This is the entry point to the semantic checker.
 
+    env_ = Enviro();
      Your checker should do the following two things:
 
      1) Check that the program is semantically correct
@@ -617,8 +1044,11 @@ void program_class::semant()
     // semantic analysis phase 2, check others.
     classtable->check_phase2();
 
-    if (classtable->errors()) {
+    if (!semant_debug) {
+        if (classtable->errors()) {
     	cerr << "Compilation halted due to static semantic errors." << endl;
 	    exit(1);
+     }
     }
+
 }

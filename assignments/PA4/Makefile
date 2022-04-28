@@ -2,7 +2,7 @@
 ASSN = 4
 CLASS= cs143
 CLASSDIR= ../..
-LIB= -L/usr/pubsw/lib -lfl 
+LIB= -L/usr/pubsw/lib -lfl
 AR= gar
 ARCHIVE_NEW= -cr
 RANLIB= gar -qs
@@ -26,7 +26,7 @@ BFLAGS = -d -v -y -b cool --debug -p cool_yy
 ASTBFLAGS = -d -v -y -b ast --debug -p ast_yy
 
 CC=g++
-CFLAGS=-g -Wall -Wno-unused -Wno-write-strings -Wno-deprecated ${CPPINCLUDE} -DDEBUG
+CFLAGS=-g -Wall -Wno-unused -Wno-write-strings -Wno-deprecated ${CPPINCLUDE} -DDEBUG -std=c++17
 FLEX=flex ${FFLAGS}
 BISON= bison ${BFLAGS}
 DEPEND = ${CC} -MM ${CPPINCLUDE}
@@ -37,8 +37,8 @@ lsource: ${LSRC}
 
 ${OUTPUT}: semant
 	@rm -f ${OUTPUT}
-	./mysemant good.cl >good.output 2>&1 
-	-./mysemant bad.cl >bad.output 2>&1 
+	./mysemant good.cl >good.output 2>&1
+	-./mysemant bad.cl >bad.output 2>&1
 
 compile:	semant change-prot
 
@@ -50,7 +50,7 @@ SEMANT_OBJS := ${filter-out symtab_example.o,${OBJS}}
 semant:  ${SEMANT_OBJS} lexer parser cgen
 	${CC} ${CFLAGS} ${SEMANT_OBJS} ${LIB} -o semant
 
-symtab_example: symtab_example.cc 
+symtab_example: symtab_example.cc
 	${CC} ${CFLAGS} symtab_example.cc ${LIB} -o symtab_example
 
 .cc.o:

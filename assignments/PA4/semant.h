@@ -59,6 +59,19 @@ public:
 
   void check_phase2();
 
+  std::optional<Class_> getClass(Symbol class_name) {
+    if (symbol_to_class_.find(class_name) != symbol_to_class_.end()) {
+      return symbol_to_class_[class_name];
+    }  else {
+      return {};
+    }
+  }
+
+  std::vector<Symbol> getChild(Symbol cur_class) {
+    if (graph_rev_.find(cur_class) == graph_rev_.end()) return {};
+    else return graph_rev_[cur_class];
+  }
+
   int errors() { return semant_errors; }
   ostream& semant_error();
   ostream& semant_error(Class_ c);
