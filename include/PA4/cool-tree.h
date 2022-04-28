@@ -11,7 +11,125 @@
 
 #include "tree.h"
 #include "cool-tree.handcode.h"
+#include <unordered_map>
+#include <vector>
 
+template<typename K, typename V>
+class SymTable {
+private:
+   std::vector<std::unordered_map<K, V>> table_;
+   void fatalError(const std::string& msg) {
+   std::cerr << msg << std::endl;
+   exit(1);
+   }
+public:
+   SymTable() = default;
+
+   void enterScope() {
+   table_.push_back({});
+   }
+
+   void exitScope() {
+   if (table_.empty()) fatalError("existScope: Cannot remove scope from an empty table.");
+   table_.pop_back();
+   }
+
+   void add(const K& k, const V& v) {
+   if (table_.empty()) fatalError("add: Cannot add a symbol without a scope.");
+   table_.back()[k] = v;
+   }
+
+   std::optional<V> lookUp(const K& k) const {
+   for (auto iter = table_.rbegin(); iter != table_.rend(); ++iter) {
+      if (iter->find(k) != iter->end()) {
+         return (*iter)[k];
+      }
+   }
+   return {}; // change to optional
+   }
+
+   std::optional<V> probe(const K& k) const {
+      if (table_.empty()) fatalError("probe: No scope in table.");
+      if (table_.back().find(k) != table_.back().end()) {
+         return table_.back()[k];
+      }
+      return {}; // change to optional
+   }
+
+   void dump() const {
+   for (auto iter = table_.rbegin(); iter != table_.rend(); ++iter) {
+      std::cerr << "\nScore: \n";
+      for (auto& [k, v] : *iter) {
+         std::cerr << k << " " << v << std::endl;
+      }
+   }
+   }
+};
+
+class Enviro {
+private:
+   std::unordered_map<Symbol, std::unordered_map<Symbol, std::pair<Formals, Symbol>>> method_signatures_; // M
+   SymTable<Symbo, Symbol> name_scope_; // O
+   Symbol cur_class_;
+   std::unordered_map<Symbol, Symbol>& inherit_graph_;
+public:
+   Enviro(std::unordered_map<Symbol, Symbol>& inherit_graph) : inherit_graph_(inherit_graph) {}
+
+   void setCurClass(Symbol class) {
+   cur_class_ = class;
+   }
+
+   Symbol getCurClass() const {
+   return cur_class_;
+   }
+
+   void newScope() {
+   name_scope_.enterScope();
+   }
+
+   void addVar(Symbol name, Symbol type) {
+      name_scope_.add(name, type);
+   }
+
+   // look up the type of a symbol
+   Symbol lookUp(Symbol name) {
+   return name_scope_.lookUp(name);
+   }
+
+   // Get a method,
+   // find from self, then from parent.
+   std::optional<std::pair<Formals, Symbol>> getFuncSig(Symbol class_name, Symbol method_name) {
+      Symbol cur_class = class_name;
+      while (cur_class != No_class) {
+
+         auto find_res1 = method_signatures_.find(class_name);
+         if (find_res1 == method_signatures_.end()) {
+            cur_class = inherit_graph_[cur_class];
+            continue;
+         }
+         auto find_re2 = find_re1->find(method_name);
+         if (find_re2 = find_re1->end()) {
+            cur_class = inherit_graph_[cur_class];
+            continue;
+         }
+         return *find_re2;
+      }
+      return {};
+   }
+
+   /**
+   * Add a method.
+   */
+   void addFuncSig(Symbol clas_name, Symbol method_name, Formals args, Symbol return_type) {
+   auto& tmp = method_signatures_[class_name];
+   if (tmp.find(method_name) != tmp.end())  {
+      // TODO add a exist method
+      std::cerr << "Enviro: Add an existing method: " << class_name << "::" << method_name << std::endl;
+      exit(1);
+   }
+   tmp[method_name] = {args, return_type};
+   }
+};
 
 // define the class for phylum
 // define simple phylum - Program
@@ -36,6 +154,7 @@ public:
    tree_node *copy()		 { return copy_Class_(); }
    virtual Class_ copy_Class_() = 0;
 
+   virtual void typeCheck(Enviro& env) = 0;
 #ifdef Class__EXTRAS
    Class__EXTRAS
 #endif
@@ -49,6 +168,8 @@ class Feature_class : public tree_node {
 public:
    tree_node *copy()		 { return copy_Feature(); }
    virtual Feature copy_Feature() = 0;
+   virtual void getType() = 0;
+   virtual void typeCheck(Enviro &env) = 0;
 
 #ifdef Feature_EXTRAS
    Feature_EXTRAS
@@ -64,6 +185,12 @@ public:
    tree_node *copy()		 { return copy_Formal(); }
    virtual Formal copy_Formal() = 0;
 
+   bool equal(Formal rhs) const {
+      return getTypeDecl() == rhs->getTypeDecl();
+   }
+   virtual Symbol getName() const = 0;
+   virtual Symbol getTypeDecl() const = 0;
+
 #ifdef Formal_EXTRAS
    Formal_EXTRAS
 #endif
@@ -78,6 +205,7 @@ public:
    tree_node *copy()		 { return copy_Expression(); }
    virtual Expression copy_Expression() = 0;
 
+   virtual Symbol typeCheck(Enviro &env) = 0;
 #ifdef Expression_EXTRAS
    Expression_EXTRAS
 #endif
@@ -161,6 +289,38 @@ public:
    }
    Class_ copy_Class_();
    void dump(ostream& stream, int n);
+   Symbol get_name() const {
+      return name;
+   }
+
+   Symbol get_parent() const {
+      return parent;
+   }
+
+   Symbol get_filename() const {
+      return filename;
+   }
+
+   void typeCheck(Enviro& env) override {
+      // Add newscope and push attr
+      env.enterScope();
+      env.setCurClass(name);
+      // add self to scope
+      env.addVar(self, name);
+      for (int i = features->first(); features->more(i); i = features->next(i)) {
+         if (features->nth(i)->getType() == FeatureType::ATTR) {
+            attr_class* cur_attr = dynamic_cast<attr_class*>(features->nth(i));
+            env.addVar(cur_attr->getName(), cur_attr->getDeclType());
+         }
+      }
+      // check attr and method
+      for (int i = features->first(); features->more(i); i = features->next(i)) {
+         features->nth(i)->typeCheck(env);
+      }
+      // clear the attr
+      env.existScope();
+      // the cur_class will be set by other class
+   }
 
 #ifdef Class__SHARED_EXTRAS
    Class__SHARED_EXTRAS
@@ -170,6 +330,10 @@ public:
 #endif
 };
 
+enum class FeatureType {
+   METHOD,
+   ATTR
+};
 
 // define constructor - method
 class method_class : public Feature_class {
@@ -187,6 +351,41 @@ public:
    }
    Feature copy_Feature();
    void dump(ostream& stream, int n);
+
+   FeatureType getType() const {
+      return FeatureType::METHOD;
+   }
+
+   Symbol getName() const {
+      return name;
+   }
+
+   Formals getFormals() const {
+      return formals;
+   }
+
+   Symbol getRetType() const {
+      return return_type;
+   }
+
+   Expression getExpr() const {
+      return expr;
+   }
+
+   Symbol typeCheck(Enviro &env) override {
+      // add new scope
+      env.enterScope();
+      for (int i = formals->begin(); formals->more(i); i = formals->next(i)) {
+          Formal cur_formal = formals->nth(i);
+          env.addVar(cur_formal->getName(), cur_formal->getTypeDecl());
+      }
+      Symbol expr_type = expr->typeCheck(env);
+      if (!checkSubClass(return_type, expr_type)) {
+         // TODO type mismatch;
+      }
+      env.existScope();
+      return No_typehttps;
+   }
 
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
@@ -212,6 +411,25 @@ public:
    Feature copy_Feature();
    void dump(ostream& stream, int n);
 
+   FeatureType getType() const {
+      return FeatureType::ATTR;
+   }
+
+   void typeCheck(Enviro &env) override {
+      Symbol init_type = init->typeCheck(env);
+      if (!checkSubClass(type_decl, init_type)) {
+         //TODO type mismatch.
+      }
+   }
+
+   Symbol getName() const {
+      return name;
+   }
+
+   Symbol getDeclType() const {
+      return type_decl;
+   }
+
 #ifdef Feature_SHARED_EXTRAS
    Feature_SHARED_EXTRAS
 #endif
@@ -233,6 +451,13 @@ public:
    }
    Formal copy_Formal();
    void dump(ostream& stream, int n);
+
+   Symbol getName() const override {
+      return name;
+   }
+   Symbol getTypeDecl() const override {
+      return type_decl;
+   }
 
 #ifdef Formal_SHARED_EXTRAS
    Formal_SHARED_EXTRAS
@@ -279,6 +504,10 @@ public:
    }
    Expression copy_Expression();
    void dump(ostream& stream, int n);
+
+   Symbol typeCheck(Enviro &env) override {
+      Symbol expr_type = expr->typeCheck(env);
+   }
 
 #ifdef Expression_SHARED_EXTRAS
    Expression_SHARED_EXTRAS
