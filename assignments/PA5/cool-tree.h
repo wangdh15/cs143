@@ -41,6 +41,10 @@ public:
 #endif
 };
 
+enum class FeatureType {
+   ATTR_,
+   METHOD_
+};
 
 // define simple phylum - Feature
 typedef class Feature_class *Feature;

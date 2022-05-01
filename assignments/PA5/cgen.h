@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include <unordered_map>
 #include "emit.h"
 #include "cool-tree.h"
 #include "symtab.h"
@@ -21,7 +22,7 @@ private:
    int stringclasstag;
    int intclasstag;
    int boolclasstag;
-
+   std::unordered_map<StringEntryP, int> class_tags;
 
 // The following methods emit code for
 // constants and global declarations.
@@ -31,6 +32,11 @@ private:
    void code_bools(int);
    void code_select_gc();
    void code_constants();
+   void set_class_tag();
+   void code_class_nameTab();
+   void code_class_objTab();
+   void code_class_dispTab();
+   void code_class_protObj();
 
 // The following creates an inheritance graph from
 // a list of classes.  The graph is implemented as
@@ -50,7 +56,7 @@ public:
 
 
 class CgenNode : public class__class {
-private: 
+private:
    CgenNodeP parentnd;                        // Parent of class
    List<CgenNode> *children;                  // Children of class
    Basicness basic_status;                    // `Basic' if class is basic
@@ -68,9 +74,9 @@ public:
    int basic() { return (basic_status == Basic); }
 };
 
-class BoolConst 
+class BoolConst
 {
- private: 
+ private:
   int val;
  public:
   BoolConst(int);

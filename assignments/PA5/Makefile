@@ -2,16 +2,16 @@
 ASSN = 5
 CLASS= cs143
 CLASSDIR= ../..
-LIB= -L/usr/pubsw/lib -lfl 
+LIB= -L/usr/pubsw/lib -lfl
 AR= gar
 ARCHIVE_NEW= -cr
 RANLIB= gar -qs
 
 SRC= cgen.cc cgen.h cgen_supp.cc cool-tree.h cool-tree.handcode.h emit.h example.cl README
-CSRC= cgen-phase.cc utilities.cc stringtab.cc dumptype.cc tree.cc cool-tree.cc ast-lex.cc ast-parse.cc handle_flags.cc 
+CSRC= cgen-phase.cc utilities.cc stringtab.cc dumptype.cc tree.cc cool-tree.cc ast-lex.cc ast-parse.cc handle_flags.cc
 TSRC= mycoolc
 CGEN=
-HGEN= 
+HGEN=
 LIBS= lexer parser semant
 CFIL= cgen.cc cgen_supp.cc ${CSRC} ${CGEN}
 LSRC= Makefile
@@ -26,7 +26,7 @@ FFLAGS = -d8 -ocool-lex.cc
 BFLAGS = -d -v -y -b cool --debug -p cool_yy
 
 CC=g++
-CFLAGS=-g -Wall -Wno-unused -Wno-write-strings -Wno-deprecated ${CPPINCLUDE} -DDEBUG
+CFLAGS=-g -Wall -Wno-unused -Wno-write-strings -Wno-deprecated ${CPPINCLUDE} -DDEBUG -std=c++17
 FLEX=flex ${FFLAGS}
 BISON= bison ${BFLAGS}
 DEPEND = ${CC} -MM ${CPPINCLUDE}
@@ -37,7 +37,7 @@ lsource: ${LSRC}
 
 ${OUTPUT}:	cgen
 	@rm -f ${OUTPUT}
-	./mycoolc  example.cl >example.output 2>&1 
+	./mycoolc  example.cl >example.output 2>&1
 
 compile:	cgen change-prot
 

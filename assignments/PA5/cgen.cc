@@ -22,6 +22,8 @@
 //
 //**************************************************************
 
+#include <unordered_map>
+#include <vector>
 #include "cgen.h"
 #include "cgen_gc.h"
 
@@ -43,7 +45,7 @@ extern int cgen_debug;
 // as fixed names used by the runtime system.
 //
 //////////////////////////////////////////////////////////////////////
-Symbol 
+Symbol
        arg,
        arg2,
        Bool,
@@ -88,7 +90,7 @@ static void initialize_constants(void)
   length      = idtable.add_string("length");
   Main        = idtable.add_string("Main");
   main_meth   = idtable.add_string("main");
-//   _no_class is a symbol that can't be the name of any 
+//   _no_class is a symbol that can't be the name of any
 //   user-defined class.
   No_class    = idtable.add_string("_no_class");
   No_type     = idtable.add_string("_no_type");
@@ -129,7 +131,7 @@ BoolConst truebool(TRUE);
 //
 //*********************************************************
 
-void program_class::cgen(ostream &os) 
+void program_class::cgen(ostream &os)
 {
   // spim wants comments to start with '#'
   os << "# start of generated code\n";
@@ -157,7 +159,7 @@ void program_class::cgen(ostream &os)
 
 static void emit_load(char *dest_reg, int offset, char *source_reg, ostream& s)
 {
-  s << LW << dest_reg << " " << offset * WORD_SIZE << "(" << source_reg << ")" 
+  s << LW << dest_reg << " " << offset * WORD_SIZE << "(" << source_reg << ")"
     << endl;
 }
 
@@ -403,6 +405,7 @@ void StringEntry::code_def(ostream& s, int stringclasstag)
 
 
  /***** Add dispatch information for class String ******/
+      emit_disptable_ref(Str, s);
 
       s << endl;                                              // dispatch table
       s << WORD;  lensym->code_ref(s);  s << endl;            // string length
@@ -412,11 +415,11 @@ void StringEntry::code_def(ostream& s, int stringclasstag)
 
 //
 // StrTable::code_string
-// Generate a string object definition for every string constant in the 
+// Generate a string object definition for every string constant in the
 // stringtable.
 //
 void StrTable::code_string_table(ostream& s, int stringclasstag)
-{  
+{
   for (List<StringEntry> *l = tbl; l; l = l->tl())
     l->hd()->code_def(s,stringclasstag);
 }
@@ -442,9 +445,10 @@ void IntEntry::code_def(ostream &s, int intclasstag)
   code_ref(s);  s << LABEL                                // label
       << WORD << intclasstag << endl                      // class tag
       << WORD << (DEFAULT_OBJFIELDS + INT_SLOTS) << endl  // object size
-      << WORD; 
+      << WORD;
 
  /***** Add dispatch information for class Int ******/
+      emit_disptable_ref(Int, s);
 
       s << endl;                                          // dispatch table
       s << WORD << str << endl;                           // integer value
@@ -472,7 +476,7 @@ void BoolConst::code_ref(ostream& s) const
 {
   s << BOOLCONST_PREFIX << val;
 }
-  
+
 //
 // Emit code for a constant Bool.
 // You should fill in the code naming the dispatch table.
@@ -489,7 +493,7 @@ void BoolConst::code_def(ostream& s, int boolclasstag)
       << WORD;
 
  /***** Add dispatch information for class Bool ******/
-
+      emit_disptable_ref(Bool, s);
       s << endl;                                            // dispatch table
       s << WORD << val << endl;                             // value (0 or 1)
 }
@@ -534,10 +538,10 @@ void CgenClassTable::code_global_data()
   //
   str << INTTAG << LABEL
       << WORD << intclasstag << endl;
-  str << BOOLTAG << LABEL 
+  str << BOOLTAG << LABEL
       << WORD << boolclasstag << endl;
-  str << STRINGTAG << LABEL 
-      << WORD << stringclasstag << endl;    
+  str << STRINGTAG << LABEL
+      << WORD << stringclasstag << endl;
 }
 
 
@@ -551,7 +555,7 @@ void CgenClassTable::code_global_data()
 void CgenClassTable::code_global_text()
 {
   str << GLOBAL << HEAP_START << endl
-      << HEAP_START << LABEL 
+      << HEAP_START << LABEL
       << WORD << 0 << endl
       << "\t.text" << endl
       << GLOBAL;
@@ -589,6 +593,32 @@ void CgenClassTable::code_select_gc()
   str << WORD << (cgen_Memmgr_Test == GC_TEST) << endl;
 }
 
+// set a tag for every class
+void CgenClassTable::set_class_tag() {
+
+  std::vector<std::string> tmp = {"Object", "IO", "String", "Int", "Bool", "Main"};
+  for (auto& x : tmp) {
+    class_tags[stringtable.lookup_string(const_cast<char*>(x.c_str()))] = class_tags.size();
+  }
+
+  stringclasstag = class_tags[stringtable.lookup_string("String")];
+  intclasstag = class_tags[stringtable.lookup_string("Int")];
+  boolclasstag = class_tags[stringtable.lookup_string("Bool")];
+
+  for(List<CgenNode> *l = nds; l; l = l->tl()) {
+    CgenNode* cur = l->hd();
+    if (class_tags.find(stringtable.lookup_string(cur->get_name()->get_string())) == class_tags.end()) {
+      class_tags[stringtable.lookup_string(cur->get_name()->get_string())] = class_tags.size();
+    }
+  }
+
+  if (cgen_debug) {
+    cout << "The class tag is: " << std::endl;
+    for (auto& [k, v] : class_tags) {
+      cout << k->get_string() << " " << v << endl;
+    }
+  }
+}
 
 //********************************************************
 //
@@ -616,18 +646,115 @@ void CgenClassTable::code_constants()
   code_bools(boolclasstag);
 }
 
+// generate the class nametab
+// the seq is index by class tag
+void CgenClassTable::code_class_nameTab() {
+  const int n = class_tags.size();
+  std::vector<StringEntryP> tt(n);
+  for (auto& [k, v] : class_tags) {
+    tt[v] = k;
+  }
+
+  str << CLASSNAMETAB << LABEL;
+  for (int i = 0; i < n; ++i) {
+    str << WORD;
+    tt[i]->code_ref(str);
+    str << endl;
+  }
+}
+
+// gene ObjTab
+void CgenClassTable::code_class_objTab() {
+  const int n = class_tags.size();
+  std::vector<StringEntryP> tt(n);
+  for (auto& [k, v] : class_tags) {
+    tt[v] = k;
+  }
+  str << CLASSOBJTAB << LABEL;
+  for (int i = 0; i < n; ++i) {
+    str << WORD; emit_protobj_ref(tt[i], str); str << endl;
+    str << WORD; emit_init_ref(tt[i], str); str << endl;
+  }
+}
+
+static void gene_dispTab_for_one_class(CgenNodeP cur, std::ostream& str) {
+
+  if (cur->get_name() != Object) {
+    gene_dispTab_for_one_class(cur->get_parentnd(), str);
+  }
+  Features features = cur->get_features();
+  for (int i = features->first(); features->more(i); i = features->next(i)) {
+    Feature t = features->nth(i);
+    if (t->getType() == FeatureType::METHOD_) {
+      str << WORD; emit_method_ref(cur->get_name(), t->get_name(), str); str << endl;
+    }
+  }
+}
+
+void CgenClassTable::code_class_dispTab() {
+
+ for(List<CgenNode> *l = nds; l; l = l->tl()) {
+    CgenNode* cur = l->hd();
+    emit_disptable_ref(cur->get_name(), str); str << LABEL;
+    gene_dispTab_for_one_class(cur, str);
+ }
+}
+
+
+void collect_all_attr(CgenNodeP cur, std::vector<Symbol>& attrs) {
+  if (cur->get_name() != Object) {
+    collect_all_attr(cur->get_parentnd(), attrs);
+  }
+  Features features = cur->get_features();
+  for (int i = features->first(); features->more(i); i = features->next(i)) {
+    Feature feature = features->nth(i);
+    if (feature->getType() == FeatureType::ATTR_) {
+      attrs.push_back(feature->get_type());
+    }
+  }
+}
+
+void CgenClassTable::code_class_protObj() {
+  for(List<CgenNode> *l = nds; l; l = l->tl()) {
+    str << WORD << -1 << endl;
+    CgenNode* cur = l->hd();
+    emit_protobj_ref(cur->get_name(), str); str << LABEL;
+    str << WORD << class_tags[stringtable.lookup_string(cur->get_name()->get_string())] << endl;
+    if (cur->get_name() == Str) {
+      str << WORD << 5 << endl;
+      str << WORD; emit_disptable_ref(cur->get_name(), str); str << endl;
+      str << WORD ; inttable.lookup_string("0")->code_ref(str); str << endl;
+      emit_string_constant(str, "");
+    } else if (cur->get_name() == Int || cur->get_name() == Bool) {
+      str << WORD << 4 << endl;
+
+      str << WORD; emit_disptable_ref(cur->get_name(), str); str << endl;
+      str << WORD << 0 << endl;
+    } else {
+      std::vector<Symbol> attrs;
+      collect_all_attr(cur, attrs);
+      str << WORD << DEFAULT_OBJFIELDS + attrs.size() << endl;
+      str << WORD; emit_disptable_ref(cur->get_name(), str); str << endl;
+      for (auto& x : attrs) {
+          str << WORD; emit_protobj_ref(x, str); str << endl;
+      }
+    }
+ }
+}
 
 CgenClassTable::CgenClassTable(Classes classes, ostream& s) : nds(NULL) , str(s)
 {
-   stringclasstag = 0 /* Change to your String class tag here */;
-   intclasstag =    0 /* Change to your Int class tag here */;
-   boolclasstag =   0 /* Change to your Bool class tag here */;
+  //  stringclasstag = 2 /* Change to your String class tag here */;
+  //  intclasstag =    3 /* Change to your Int class tag here */;
+  //  boolclasstag =   4 /* Change to your Bool class tag here */;
 
    enterscope();
    if (cgen_debug) cout << "Building CgenClassTable" << endl;
    install_basic_classes();
    install_classes(classes);
    build_inheritance_tree();
+
+  set_class_tag();
 
    code();
    exitscope();
@@ -658,7 +785,7 @@ void CgenClassTable::install_basic_classes()
 	new CgenNode(class_(prim_slot,No_class,nil_Features(),filename),
 			    Basic,this));
 
-// 
+//
 // The Object class has no parent class. Its methods are
 //        cool_abort() : Object    aborts the program
 //        type_name() : Str        returns a string representation of class name
@@ -669,7 +796,7 @@ void CgenClassTable::install_basic_classes()
 //
   install_class(
    new CgenNode(
-    class_(Object, 
+    class_(Object,
 	   No_class,
 	   append_Features(
            append_Features(
@@ -679,7 +806,7 @@ void CgenClassTable::install_basic_classes()
 	   filename),
     Basic,this));
 
-// 
+//
 // The IO class inherits from Object. Its methods are
 //        out_string(Str) : SELF_TYPE          writes a string to the output
 //        out_int(Int) : SELF_TYPE               "    an int    "  "     "
@@ -688,7 +815,7 @@ void CgenClassTable::install_basic_classes()
 //
    install_class(
     new CgenNode(
-     class_(IO, 
+     class_(IO,
             Object,
             append_Features(
             append_Features(
@@ -699,16 +826,16 @@ void CgenClassTable::install_basic_classes()
                         SELF_TYPE, no_expr()))),
             single_Features(method(in_string, nil_Formals(), Str, no_expr()))),
             single_Features(method(in_int, nil_Formals(), Int, no_expr()))),
-	   filename),	    
+	   filename),
     Basic,this));
 
 //
 // The Int class has no methods and only a single attribute, the
-// "val" for the integer. 
+// "val" for the integer.
 //
    install_class(
     new CgenNode(
-     class_(Int, 
+     class_(Int,
 	    Object,
             single_Features(attr(val, prim_slot, no_expr())),
 	    filename),
@@ -729,10 +856,10 @@ void CgenClassTable::install_basic_classes()
 //       length() : Int                       length of the string
 //       concat(arg: Str) : Str               string concatenation
 //       substr(arg: Int, arg2: Int): Str     substring
-//       
+//
    install_class(
     new CgenNode(
-      class_(Str, 
+      class_(Str,
 	     Object,
              append_Features(
              append_Features(
@@ -741,14 +868,14 @@ void CgenClassTable::install_basic_classes()
              single_Features(attr(val, Int, no_expr())),
             single_Features(attr(str_field, prim_slot, no_expr()))),
             single_Features(method(length, nil_Formals(), Int, no_expr()))),
-            single_Features(method(concat, 
+            single_Features(method(concat,
 				   single_Formals(formal(arg, Str)),
-				   Str, 
+				   Str,
 				   no_expr()))),
-	    single_Features(method(substr, 
-				   append_Formals(single_Formals(formal(arg, Int)), 
+	    single_Features(method(substr,
+				   append_Formals(single_Formals(formal(arg, Int)),
 						  single_Formals(formal(arg2, Int))),
-				   Str, 
+				   Str,
 				   no_expr()))),
 	     filename),
         Basic,this));
@@ -834,6 +961,25 @@ void CgenClassTable::code()
 //                   - dispatch tables
 //
 
+//  MY CODE BEGIN
+  if (cgen_debug) cout << "coding class_nameTab" << endl;
+
+  code_class_nameTab();
+
+  if (cgen_debug) cout << "coding class_objTab" << endl;
+
+  code_class_objTab();
+
+  if (cgen_debug) cout << "coding class_dispTab" << endl;
+
+  code_class_dispTab();
+
+  if (cgen_debug) cout << "coding class_protObj" << endl;
+
+  code_class_protObj();
+
+// MY CODE END
+
   if (cgen_debug) cout << "coding global text" << endl;
   code_global_text();
 
@@ -841,6 +987,14 @@ void CgenClassTable::code()
 //                   - object initializer
 //                   - the class methods
 //                   - etc...
+
+
+// MY CODE BEIGN
+
+
+
+
+// MY CODE END
 
 }
 
@@ -862,7 +1016,7 @@ CgenNode::CgenNode(Class_ nd, Basicness bstatus, CgenClassTableP ct) :
    parentnd(NULL),
    children(NULL),
    basic_status(bstatus)
-{ 
+{
    stringtable.add_string(name->get_string());          // Add class name to string table
 }
 
@@ -928,7 +1082,7 @@ void leq_class::code(ostream &s) {
 void comp_class::code(ostream &s) {
 }
 
-void int_const_class::code(ostream& s)  
+void int_const_class::code(ostream& s)
 {
   //
   // Need to be sure we have an IntEntry *, not an arbitrary Symbol
@@ -958,4 +1112,8 @@ void no_expr_class::code(ostream &s) {
 void object_class::code(ostream &s) {
 }
 
+// cool-tree.h implement begin
 
+
+
+// cool-tree.h end

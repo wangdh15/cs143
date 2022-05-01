@@ -659,3 +659,18 @@ Expression object(Symbol name)
   return new object_class(name);
 }
 
+FeatureType attr_class::getType() {
+   return FeatureType::ATTR_;
+}
+
+FeatureType method_class::getType() {
+   return FeatureType::METHOD_;
+}
+
+Symbol attr_class::get_type() {
+   return type_decl;
+}
+
+Symbol method_class::get_type() {
+   return return_type;
+}
