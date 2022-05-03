@@ -110,3 +110,80 @@ String: 2
 Int: 3
 Bool: 4
 Main: 5
+
+## .text部分
+
+对于.text的部分，需要实现的部分有：
+1. 每个class的init函数（包括Object, IO, String, Int, Bool, Main）
+2. 每个class的其他函数（不包括Object, IO, String, Int, Bool）
+
+
+### xxx_init
+
+每个class的init函数需要包含以下几个部分：
+- 函数头
+- 调用父类的init函数
+- 初始化自己的attr
+- 函数尾
+
+也就是这部分负责执行每个class的attr部分的执行
+
+### C.m
+
+其他函数的定义
+
+采用stack machine的机制，每个表达式的求值遵守如下的约定：
+1. 求值前和求值后，栈的状态，还有其他寄存器的状态不变
+2. 表达式的结果存储到 $a0中。
+
+对于每个函数而言，其调用遵守如下的约定
+- $a0 存储了 self 的值
+- 最终的$a0存储了返回的值
+- 跳转之前，caller需要将自己的fp、参数压入栈，栈的布局如下：
+    + old fp
+    + args n
+    + args n - 1
+    + ....
+    + args 1
+                <- sp
+
+- 跳转之后，callee一开始需要将返回地址压栈，并更新fp，得到的布局如下：
+    + olf fp
+    + args n
+    + args n - 1
+    + ....
+    + args 1
+    + ret addr($ra)         <- fp
+                            <- sp
+- 然后利用fp + i * 4就可以获取到第i个参数
+
+- callee返回的时候，栈的布局需要和caller调用的时候相同，且$a0存储这函数返回 的结果。这个时候callee负责将参数弹出，并恢复fp的值。
+
+函数内部可以使用的变量有如下几类：
+1. 当前类及其父类中包含的attr
+2. 当前函数的参数
+3. let表达式引入的变量
+4. branch引入的变量
+
+在函数内部，$s0用于存储self，可以用其和偏移量来访问attr
+$fp用来访问参数、let和branch引入的变量
+
+## 不同expr的操作
+
+### assign_class
+- 生成expr的代码
+- 将$a0的值放到栈上
+- 根据env和name获取变量对应的位置
+- 将expr的返回结果赋值给对应的位置
+- 将expr的返回结果放到$a0中
+
+### static_dispatch_class
+
+-
+
+### typcase_class
+
+- 每个分支创建一个label:
+- 在每个分支入口，利用blt和bgt两个命令，来判断是否是子类（继承的classTag需要使用dfs序）
+- 如果不满足，就跳到下一个label去
+- 如果满足，符号表添加新增的变量，将这个变量放到栈上，然后执行对应分支的逻辑，将结果放到$a0上，然后b到结束的label即可。
