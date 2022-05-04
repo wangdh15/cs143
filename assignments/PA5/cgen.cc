@@ -862,9 +862,9 @@ void CgenClassTable::code_class_init() {
     auto& t = class_attr_offset[cur_class->get_name()];
     enterScope();
     for (auto& [name, offset] : t) {
-      addSymbol(name, BASE_LOC_TYPE::SELF_, offset);
+      addSymbol(name, BASE_LOC_TYPE::SELF_, offset + DEFAULT_OBJFIELDS);
     }
-    addSymbol(self, BASE_LOC_TYPE::SELF_, 0);
+    // addSymbol(self, BASE_LOC_TYPE::SELF_, 0);
 
     emit_init_ref(cur_class->get_name(), str); str << LABEL;
     emit_method_begin(str);
@@ -885,7 +885,7 @@ void CgenClassTable::code_class_init() {
         for (int i = features->first(); features->more(i); i = features->next(i)) {
           Feature feature = features->nth(i);
           if (feature->getType() == FeatureType::ATTR_) {
-            feature->code(str, *this);
+                feature->code(str, *this);
           }
         }
 
@@ -1660,15 +1660,12 @@ int CgenClassTable::get_method_offset(Symbol class_name, Symbol method_name) {
 void attr_class::code(std::ostream& s, CgenClassTable& cgen_class) {
 
   if (init->get_type() == NULL) {
-    if (cgen_debug) {
-      std::cerr << "meet no type" << std::endl;
-    }
-    emit_partial_load_address(ACC, s); emit_protobj_ref(type_decl, s); s << endl;
-    emit_jal("Object.copy", s);
-    s << JAL; emit_init_ref(type_decl, s); s << endl;
-  } else {
-    init->code(s, cgen_class);
+    // if the init is no_expr, this field is set proper by protObj,
+    // so no need to modify this attr.
+    return;
   }
+
+  init->code(s, cgen_class);
   // assign the result to attr
   auto loc = cgen_class.getSymbolToLoc().lookUp(name);
   emit_store(ACC, loc.offset, SELF, s);

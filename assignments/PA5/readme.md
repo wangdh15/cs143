@@ -187,3 +187,20 @@ $fp用来访问参数、let和branch引入的变量
 - 在每个分支入口，利用blt和bgt两个命令，来判断是否是子类（继承的classTag需要使用dfs序）
 - 如果不满足，就跳到下一个label去
 - 如果满足，符号表添加新增的变量，将这个变量放到栈上，然后执行对应分支的逻辑，将结果放到$a0上，然后b到结束的label即可。
+
+
+# V2
+
+## protObj和init的实现
+
+- 按照文档要求，Int, String, Bool 三个类型protObj的对应的attr需要合适设定，其他类型的protObj的attr的值没有要求。
+- 如果一个class的attr没有赋值的话，如果其类型为Int, String, Bool，则需要是对应的default的值。其他的属性需要时void(0)
+
+所以在设计的时候，遵循了如下的标准：
+1. 对应Int, String, Bool三种类型的protObj，按照文档设置好对应的attr。
+2. 对于其他类型的protObj，如果其attr是Int, String, Bool的话，将其设定为对应的protObj类型（默认值）；如果是其他类型的话，则置为零。
+3. 对于每个类的init方法，首先：
+    - 调用父类的init方法
+    - 检查每一个attr：
+        + 如果init表达式是no_expr，则不需要进行处理（protoObj已经正确处理了）
+        + 如果init表达式不是no_expr，则执行对应的initcode，然后赋值即可。
