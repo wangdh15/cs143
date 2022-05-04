@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
       strcat(out_filename, ".s");
   }
 
-  // 
+  //
   // Don't touch the output file until we know that earlier phases of the
   // compiler have succeeded.
   //

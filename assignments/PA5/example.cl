@@ -29,6 +29,10 @@ class C {
   };
 };
 
+class D {
+  p: C;
+};
+
 class Main {
   a : Int <- 1;
   b : Int <- 2;
@@ -51,6 +55,26 @@ class Main {
      e1: Int => 1;
      e2: Object => e2;
     esac
+  };
+
+  test3(p1: Int, p2: Int): Int {
+    p1 + p2
+  };
+
+  test4(p1: Int, p2: Int): Bool {
+    p1 < p2
+  };
+
+  test5(): Int {
+    New Int
+  };
+
+  test6(p: Int): Int {
+    if isvoid p then
+    1
+    else
+    0
+    fi
   };
 
   main():Object {

@@ -800,7 +800,15 @@ void CgenClassTable::code_class_protObj() {
       str << WORD << DEFAULT_OBJFIELDS + all_attrs.size() << endl;
       str << WORD; emit_disptable_ref(cur->get_name(), str); str << endl;
       for (auto& x : all_attrs) {
-          str << WORD; emit_protobj_ref(x.second, str); str << endl;
+          if (x.first == Int ||
+              x.first == Str ||
+              x.first == Bool) {
+                // for Int String Bool, the default value is protObj
+                // else if 0(void)
+                str << WORD; emit_protobj_ref(x.second, str); str << endl;
+              } else {
+                str << WORD << 0 << std::endl;
+              }
       }
     }
  }
@@ -818,17 +826,106 @@ void CgenClassTable::code_class_protObj() {
 
 }
 
+static void emit_method_begin(std::ostream& s) {
+  emit_addiu(SP, SP, -12, s);
+  // store fp
+  emit_store(FP, 3, SP, s);
+  // store ra
+  emit_store(RA, 2, SP, s);
+  // store SELF
+  emit_store(SELF, 1, SP, s);
+  // set fp
+  emit_addiu(FP, SP, 12, s);
+  // set SELF
+  emit_move(SELF, ACC, s);
+}
+
+static void emit_method_end(std::ostream& s, int args_num) {
+  // resotre register
+  emit_load(SELF, 1, SP, s);
+  emit_load(RA, 2, SP, s);
+  emit_load(FP, 3, SP, s);
+
+  // modify sp
+  emit_addiu(SP, SP, (args_num + 3) * WORD_SIZE, s);
+  emit_return(s);
+}
+
+
 // generate the init code for attr.
 void CgenClassTable::code_class_init() {
 
+  for(List<CgenNode> *l = nds; l; l = l->tl()) {
+    CgenNodeP cur_class = l->hd();
+    setCurClass(cur_class->get_name());
+    // add attrs to symbol
+    auto& t = class_attr_offset[cur_class->get_name()];
+    enterScope();
+    for (auto& [name, offset] : t) {
+      addSymbol(name, BASE_LOC_TYPE::SELF_, offset);
+    }
+    addSymbol(self, BASE_LOC_TYPE::SELF_, 0);
 
+    emit_init_ref(cur_class->get_name(), str); str << LABEL;
+    emit_method_begin(str);
+
+    // call init method of parent;
+    if (cur_class->get_name() != Object) {
+      CgenNodeP parent = cur_class->get_parentnd();
+      emit_move(ACC, SELF, str);
+      str << JAL; emit_init_ref(parent->get_name(), str); str << endl;
+      emit_move(SELF, ACC, str);
+    }
+    // for Int String Bool, no need to init attr.
+    if (cur_class->get_name() != Int &&
+        cur_class->get_name() != Str &&
+        cur_class->get_name() != Bool) {
+
+        Features features = cur_class->get_features();
+        for (int i = features->first(); features->more(i); i = features->next(i)) {
+          Feature feature = features->nth(i);
+          if (feature->getType() == FeatureType::ATTR_) {
+            feature->code(str, *this);
+          }
+        }
+
+    }
+    emit_method_end(str, 0);
+    exitScope();
+  }
 
 }
 
 // generate the code for other method
 void CgenClassTable::code_class_method() {
 
+  for (List<CgenNode> *l = nds; l; l = l -> tl()) {
+    CgenNodeP cur_class = l->hd();
+    setCurClass(cur_class->get_name());
+    // add attrs to Symbol
+    Symbol cur_class_name = cur_class->get_name();
+    if (cur_class_name == Object ||
+        cur_class_name == Str ||
+        cur_class_name == IO ||
+        cur_class_name == Int ||
+        cur_class_name == Bool) continue;
+    auto& t = class_attr_offset[cur_class->get_name()];
+    enterScope();
+    for (auto& [name, offset] : t) {
+      addSymbol(name, BASE_LOC_TYPE::SELF_, offset);
+    }
+    addSymbol(self, BASE_LOC_TYPE::SELF_, 0);
 
+    Features features = cur_class->get_features();
+    for (int i = features->first(); features->more(i); i = features->next(i)) {
+      Feature feature = features->nth(i);
+      if (feature->getType() == FeatureType::METHOD_) {
+        emit_method_ref(cur_class->get_name(), feature->get_name(), str); str << LABEL;
+        feature->code(str, *this);
+      }
+    }
+    exitScope();
+  }
 }
 
 CgenClassTable::CgenClassTable(Classes classes, ostream& s) : nds(NULL) , str(s)
@@ -994,8 +1091,9 @@ void CgenClassTable::install_class(CgenNodeP nd)
 
 void CgenClassTable::install_classes(Classes cs)
 {
-  for(int i = cs->first(); cs->more(i); i = cs->next(i))
+  for(int i = cs->first(); cs->more(i); i = cs->next(i)) {
     install_class(new CgenNode(cs->nth(i),NotBasic,this));
+  }
 }
 
 //
@@ -1143,7 +1241,7 @@ void assign_class::code(ostream &s, CgenClassTable& cgen_class) {
 
 void static_dispatch_class::code(ostream &s, CgenClassTable& cgen_class) {
   // push bp on stack
-  emit_push(FP, s);
+  // emit_push(FP, s);
   // eval every arg
   for (int i = actual->first(); actual->more(i); i = actual->next(i)) {
     Expression expression = actual->nth(i);
@@ -1169,7 +1267,7 @@ void static_dispatch_class::code(ostream &s, CgenClassTable& cgen_class) {
 
 void dispatch_class::code(ostream &s, CgenClassTable& cgen_class) {
   // push bp on stack
-  emit_push(FP, s);
+  // emit_push(FP, s);
   // eval every arg
   for (int i = actual->first(); actual->more(i); i = actual->next(i)) {
     Expression expression = actual->nth(i);
@@ -1252,41 +1350,228 @@ void loop_class::code(ostream &s, CgenClassTable& cgen_class) {
 }
 
 void typcase_class::code(ostream &s, CgenClassTable& cgen_class) {
+  // gene code for expr;
+  expr->code(s, cgen_class);
 
+  // get end idx;
+  int end_idx = cgen_class.get_next_labelid();
+
+  // get class tag
+  emit_load(T1, TAG_OFFSET, ACC, s);
+
+  // gene code for each branch
+  // int cur_branch_idx = cgen_class.get_next_labelid();
+  for (int i = cases->first(); cases->more(i); i = cases->next(i)) {
+    // emit_label_def(cur_branch_idx, s);
+    Case cur_case = cases->nth(i);
+    Symbol type_decl = cur_case->get_type_decl();
+    auto [begin_idx, end_idx] = cgen_class.get_subclass_idrang(type_decl);
+    int next_branch_idx = cgen_class.get_next_labelid();
+    // check match
+    emit_blti(T1, begin_idx, next_branch_idx, s);
+    emit_bgti(T1, end_idx, next_branch_idx, s);
+    // push value to stack
+    emit_push(ACC, s);
+    // update Symbol table
+    cgen_class.enterScope();
+    int cur_stack_offset = cgen_class.push_new_var();
+    cgen_class.addSymbol(cur_case->get_name(), BASE_LOC_TYPE::FP_,
+                         cur_stack_offset);
+    // gene expr code
+    cur_case->get_expr()->code(s, cgen_class);
+    // delete symbol
+    cgen_class.exitScope();
+    // resume stack state
+    emit_addiu(SP, SP, 4, s);
+    cgen_class.pop_new_var();
+    // goto final index
+    emit_branch(end_idx, s);
+    // gene the next branch label
+    emit_label_def(next_branch_idx, s);
+  }
+  // gene the final label
+  emit_label_def(end_idx, s);
 }
 
 void block_class::code(ostream &s, CgenClassTable& cgen_class) {
-
+  for (int i = body->first(); body->more(i); i = body->next(i)) {
+    Expression expr = body->nth(i);
+    expr->code(s, cgen_class);
+  }
 }
 
 void let_class::code(ostream &s, CgenClassTable& cgen_class) {
+  if (init->get_type() == NULL) {
+    // copy the default value
+    emit_partial_load_address(ACC, s); emit_protobj_ref(type_decl, s); s << endl;
+    emit_jal("Object.copy", s);
+  } else {
+    // gene the code for expr
+    init->code(s, cgen_class);
+  }
+  // push value to stack
+  emit_push(ACC, s);
+  // update symbol
+  cgen_class.enterScope();
+  int cur_stack_offset = cgen_class.push_new_var();
+  cgen_class.addSymbol(identifier, BASE_LOC_TYPE::FP_,
+                      cur_stack_offset);
+  // gene the code for body
+  body->code(s, cgen_class);
+  // clear symbol
+  cgen_class.exitScope();
+  cgen_class.pop_new_var();
+  // resume stack state
+  emit_addiu(SP, SP, 4, s);
+}
+
+static void load_two_int(std::ostream &s, CgenClassTable& cgen_class,
+                   Expression e1, Expression e2) {
+  // gene code for e1
+  e1->code(s, cgen_class);
+  // push result to stack
+  emit_push(ACC, s);
+
+  // gene code for e2;
+  e2->code(s, cgen_class);
+
+  // copy the result
+  emit_jal("Object.copy", s);
+
+  // load e1 result to T1
+  emit_load(T1, 4, SP, s);
+
+  // result stack state
+  emit_addiu(SP, SP, 4, s);
+
+  // add the int value
+  emit_load(T2, DEFAULT_OBJFIELDS, ACC, s);
+  emit_load(T3, DEFAULT_OBJFIELDS, T1, s);
 }
 
 void plus_class::code(ostream &s, CgenClassTable& cgen_class) {
+
+  load_two_int(s, cgen_class, e1, e2);
+  emit_add(T2, T2, T3, s);
+
+  // store the value to ACC
+  emit_store(T2, DEFAULT_OBJFIELDS, ACC, s);
 }
 
 void sub_class::code(ostream &s, CgenClassTable& cgen_class) {
+  load_two_int(s, cgen_class, e1, e2);
+
+  emit_sub(T2, T2, T3, s);
+
+  emit_store(T2, DEFAULT_OBJFIELDS, ACC, s);
 }
 
 void mul_class::code(ostream &s, CgenClassTable& cgen_class) {
+  load_two_int(s, cgen_class, e1, e2);
+
+  emit_mul(T2, T2, T3, s);
+
+  emit_store(T2, DEFAULT_OBJFIELDS, ACC, s);
 }
 
 void divide_class::code(ostream &s, CgenClassTable& cgen_class) {
+
+  load_two_int(s, cgen_class, e1, e2);
+
+  emit_div(T2, T2, T3, s);
+
+  emit_store(T2, DEFAULT_OBJFIELDS, ACC, s);
+
 }
 
 void neg_class::code(ostream &s, CgenClassTable& cgen_class) {
+  // gene code for e1
+  e1->code(s, cgen_class);
+
+  // load the int value to T1
+  emit_load(T1, DEFAULT_OBJFIELDS, ACC, s);
+
+  // neg
+  emit_neg(T1, T1, s);
+
+  // store
+  emit_store(T1, DEFAULT_OBJFIELDS, ACC, s);
 }
 
 void lt_class::code(ostream &s, CgenClassTable& cgen_class) {
+  load_two_int(s, cgen_class, e1, e2);
+
+  // load true
+  emit_load_bool(ACC, BoolConst(TRUE), s);
+  // emit_load_address(ACC, "bool_const1");
+
+  int final_branch_id = cgen_class.get_next_labelid();
+
+  emit_blt(T2, T3, final_branch_id, s);
+
+  // load false
+  emit_load_bool(ACC, BoolConst(FALSE), s);
+  // emit_load_address(ACC, "bool_const0");
+
+  // gene final label
+  emit_label_def(final_branch_id, s);
 }
 
 void eq_class::code(ostream &s, CgenClassTable& cgen_class) {
+    load_two_int(s, cgen_class, e1, e2);
+
+  // load true
+  emit_load_bool(ACC, BoolConst(TRUE), s);
+  // emit_load_address(ACC, "bool_const1");
+
+  int final_branch_id = cgen_class.get_next_labelid();
+
+  emit_beq(T2, T3, final_branch_id, s);
+
+  // load false
+  emit_load_bool(ACC, BoolConst(FALSE), s);
+  // emit_load_address(ACC, "bool_const0");
+
+  // gene final label
+  emit_label_def(final_branch_id, s);
 }
 
 void leq_class::code(ostream &s, CgenClassTable& cgen_class) {
+    load_two_int(s, cgen_class, e1, e2);
+
+  // load true
+  emit_load_bool(ACC, BoolConst(TRUE), s);
+  // emit_load_address(ACC, "bool_const1");
+
+  int final_branch_id = cgen_class.get_next_labelid();
+
+  emit_bleq(T2, T3, final_branch_id, s);
+
+  // load false
+  emit_load_bool(ACC, BoolConst(FALSE), s);
+  // emit_load_address(ACC, "bool_const0", s);
+
+  // gene final label
+  emit_label_def(final_branch_id, s);
 }
 
 void comp_class::code(ostream &s, CgenClassTable& cgen_class) {
+  // gene code for e1
+  e1->code(s, cgen_class);
+  // move result to T1
+  emit_move(T1, ACC, s);
+  // load false first
+  emit_load_bool(ACC, BoolConst(FALSE), s);
+  // emit_load_address(ACC, "bool_const0");
+
+  int final_label_idx = cgen_class.get_next_labelid();
+  // compre ACC with T1, if not eq, then go to final
+  emit_bne(ACC, T1, final_label_idx, s);
+  // else load true to acc
+  emit_load_bool(ACC, BoolConst(TRUE), s);
+  // emit_load_address(ACC, "bool_const1");
+  // gene final label
+  emit_label_def(final_label_idx, s);
 }
 
 void int_const_class::code(ostream &s, CgenClassTable& cgen_class)
@@ -1308,19 +1593,110 @@ void bool_const_class::code(ostream &s, CgenClassTable& cgen_class)
 }
 
 void new__class::code(ostream &s, CgenClassTable& cgen_class) {
+  // load  the address of protObj
+  emit_partial_load_address(ACC, s);
+  emit_protobj_ref(type_name, s); s << endl;
+
+  // copy the protObj
+  emit_jal("Object.copy", s);
+
+  // call the init funcion
+  s << JAL; emit_init_ref(type_name, s); s << endl;
 }
 
 void isvoid_class::code(ostream &s, CgenClassTable& cgen_class) {
+  // gene code for e1
+  e1->code(s, cgen_class);
+
+  // move to T1
+  emit_move(T1, ACC, s);
+
+  // load true first
+  emit_load_bool(ACC, BoolConst(TRUE), s);
+
+  // get final index
+  int final_idx = cgen_class.get_next_labelid();
+
+  emit_beqz(T1, final_idx, s);
+
+  // load false
+  emit_load_bool(ACC, BoolConst(FALSE), s);
+
+  // gene the final label
+  emit_label_def(final_idx, s);
 }
 
 void no_expr_class::code(ostream &s, CgenClassTable& cgen_class) {
+
 }
 
 void object_class::code(ostream &s, CgenClassTable& cgen_class) {
+  if (name == self) {
+    emit_move(ACC, SELF, s);
+    return;
+  }
+  auto loc = cgen_class.getSymbolToLoc().lookUp(name);
+  if (loc.base_loc == BASE_LOC_TYPE::SELF_) {
+    emit_load(ACC, loc.offset, SELF, s);
+  } else {
+    emit_load(ACC, loc.offset, FP, s);
+  }
 }
+
+int CgenClassTable::get_method_offset(Symbol class_name, Symbol method_name) {
+      if (class_name == SELF_TYPE) class_name = cur_class;
+      if (class_method_offset.find(class_name) == class_method_offset.end()) {
+         std::cerr << "get_method_offset error! cannot find:"  \
+                   << class_name << "::" << method_name << std::endl;
+      }
+      auto& t = class_method_offset[class_name];
+      assert(t.find(method_name) != t.end());
+      return t[method_name];
+}
+
 
 // cool-tree.h implement begin
 
+void attr_class::code(std::ostream& s, CgenClassTable& cgen_class) {
+
+  if (init->get_type() == NULL) {
+    if (cgen_debug) {
+      std::cerr << "meet no type" << std::endl;
+    }
+    emit_partial_load_address(ACC, s); emit_protobj_ref(type_decl, s); s << endl;
+    emit_jal("Object.copy", s);
+    s << JAL; emit_init_ref(type_decl, s); s << endl;
+  } else {
+    init->code(s, cgen_class);
+  }
+  // assign the result to attr
+  auto loc = cgen_class.getSymbolToLoc().lookUp(name);
+  emit_store(ACC, loc.offset, SELF, s);
+}
+
+void method_class::code(std::ostream& s, CgenClassTable& cgen_class) {
+  // add args to Symbol Table
+  cgen_class.enterScope();
+  std::vector<Symbol> args;
+  for (int i = formals->first(); formals->more(i); i = formals->next(i)) {
+    Formal formal = formals->nth(i);
+    args.push_back(formal->get_name());
+  }
+  std::reverse(args.begin(), args.end());
+  const int n = args.size();
+  for (int i = 0; i < n; ++i) {
+    cgen_class.addSymbol(args[i], BASE_LOC_TYPE::FP_, i + 1);
+  }
+
+  emit_method_begin(s);
+
+  expr->code(s, cgen_class);
+
+  emit_method_end(s, n);
+
+  cgen_class.exitScope();
+
+}
 
 
 // cool-tree.h end

@@ -66,7 +66,6 @@ private:
    int stringclasstag;
    int intclasstag;
    int boolclasstag;
-   std::unordered_map<StringEntryP, int> class_tags;
 
    // for case expression
    std::unordered_map<Symbol, std::pair<int, int>> subclass_idrange;
@@ -80,11 +79,6 @@ private:
    // complete_method_name(class_name.method_name) ->
    // offset of disptab
    std::unordered_map<Symbol, std::unordered_map<Symbol, int>> class_method_offset;
-
-   // Map Symbol to Loc
-   SymbolTab<Symbol, Loc> symbol_to_loc;
-
-
 
    int label_id{0};
 
@@ -124,20 +118,62 @@ public:
    void code();
    CgenNodeP root();
 
-   int get_method_offset(Symbol class_name, Symbol method_name) {
-      assert(class_method_offset.find(class_name) != class_method_offset.end());
-      auto& t = class_method_offset[class_name];
-      assert(t.find(method_name) != t.end());
-      return t[method_name];
-   }
+   int get_method_offset(Symbol class_name, Symbol method_name);
+
 
    int get_next_labelid() {
       return label_id++;
    }
 
+   std::pair<int, int> get_subclass_idrang(Symbol class_name) {
+      assert(subclass_idrange.find(class_name) != subclass_idrange.end());
+      return subclass_idrange[class_name];
+   }
+private:
+   // Map Symbol to Loc
+   SymbolTab<Symbol, Loc> symbol_to_loc;
+public:
+
+   Loc getSymbolLoc(Symbol name) {
+      return symbol_to_loc.lookUp(name);
+   }
+
    SymbolTab<Symbol, Loc>& getSymbolToLoc() {
       return symbol_to_loc;
    }
+
+   void addSymbol(Symbol name, BASE_LOC_TYPE type_, int offset) {
+      symbol_to_loc.addPair(name, {type_, offset});
+   }
+
+   void enterScope() {
+      symbol_to_loc.enterScope();
+   }
+
+   void exitScope() {
+      symbol_to_loc.exitScope();
+   }
+
+private:
+   int loc_var_offset = -1;
+
+public:
+   int push_new_var() {
+      return --loc_var_offset;
+   }
+
+   void pop_new_var() {
+      ++loc_var_offset;
+   }
+
+private:
+   Symbol cur_class;
+
+public:
+   Symbol setCurClass(Symbol cur_class_) {
+      cur_class = cur_class_;
+   }
+
 };
 
 
