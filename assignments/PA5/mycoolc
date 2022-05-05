@@ -1,2 +1,3 @@
 #!/bin/csh -f
 ./lexer $* | ./parser $* | ./semant $* | ./cgen $*
+#./lexer $* | ./parser $* | ./semant $*

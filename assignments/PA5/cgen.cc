@@ -1712,18 +1712,41 @@ void bool_const_class::code(ostream &s, CgenClassTable& cgen_class)
 
 void new__class::code(ostream &s, CgenClassTable& cgen_class) {
   // load  the address of protObj
-  emit_partial_load_address(ACC, s);
-  Symbol real_type = type_name;
-  if (real_type == SELF_TYPE) {
-    real_type = cgen_class.getCurClass()->get_name();
+
+  if (type_name == SELF_TYPE) {
+    // if is self-type, should call from the class tag
+    emit_load(T1, 0, ACC, s);
+    emit_load_address(T2, "class_objTab", s);
+    emit_load_imm(T3, 8, s);
+    emit_mul(T1, T1, T3, s);
+    emit_add(T2, T2, T1, s);
+    // load protObj;
+    emit_load(ACC, 0, T2, s);
+    emit_jal("Object.copy", s);
+
+    // call init
+    emit_load(T1, 0, ACC, s);
+    emit_load_address(T2, "class_objTab", s);
+    emit_load_imm(T3, 8, s);
+    emit_mul(T1, T1, T3, s);
+    emit_addiu(T1, T1, 4, s);
+    emit_add(T2, T2, T1, s);
+    // call init ;
+    emit_load(A1, 0, T2, s);
+    emit_jalr(A1, s);
+
+  } else {
+    emit_partial_load_address(ACC, s);
+    Symbol real_type = type_name;
+    emit_protobj_ref(real_type, s); s << endl;
+
+    // copy the protObj
+    emit_jal("Object.copy", s);
+
+    // call the init funcion
+    s << JAL; emit_init_ref(real_type, s); s << endl;
   }
-  emit_protobj_ref(type_name, s); s << endl;
 
-  // copy the protObj
-  emit_jal("Object.copy", s);
-
-  // call the init funcion
-  s << JAL; emit_init_ref(type_name, s); s << endl;
 }
 
 void isvoid_class::code(ostream &s, CgenClassTable& cgen_class) {
