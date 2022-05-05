@@ -1697,6 +1697,8 @@ void attr_class::code(std::ostream& s, CgenClassTable& cgen_class) {
   // assign the result to attr
   auto loc = cgen_class.getSymbolToLoc().lookUp(name);
   emit_store(ACC, loc.offset, SELF, s);
+  // return self
+  emit_move(ACC, SELF, s);
 }
 
 void method_class::code(std::ostream& s, CgenClassTable& cgen_class) {
