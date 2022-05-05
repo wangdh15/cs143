@@ -1442,7 +1442,7 @@ static void load_two_int(std::ostream &s, CgenClassTable& cgen_class,
   emit_jal("Object.copy", s);
 
   // load e1 result to T1
-  emit_load(T1, 4, SP, s);
+  emit_load(T1, 1, SP, s);
 
   // result stack state
   emit_addiu(SP, SP, 4, s);
