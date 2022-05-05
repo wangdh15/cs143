@@ -1386,7 +1386,7 @@ void typcase_class::code(ostream &s, CgenClassTable& cgen_class) {
     cgen_class.exitScope();
     // resume stack state
     emit_addiu(SP, SP, 4, s);
-    cgen_class.pop_new_var();
+    cgen_class.pop_new_var(1);
     // goto final index
     emit_branch(end_idx, s);
     // gene the next branch label
@@ -1423,7 +1423,7 @@ void let_class::code(ostream &s, CgenClassTable& cgen_class) {
   body->code(s, cgen_class);
   // clear symbol
   cgen_class.exitScope();
-  cgen_class.pop_new_var();
+  cgen_class.pop_new_var(1);
   // resume stack state
   emit_addiu(SP, SP, 4, s);
 }
@@ -1447,7 +1447,7 @@ static void load_two_int(std::ostream &s, CgenClassTable& cgen_class,
   // result stack state
   emit_addiu(SP, SP, 4, s);
 
-  // add the int value
+  // load the int value
   emit_load(T2, DEFAULT_OBJFIELDS, ACC, s);
   emit_load(T3, DEFAULT_OBJFIELDS, T1, s);
 }
@@ -1521,22 +1521,47 @@ void lt_class::code(ostream &s, CgenClassTable& cgen_class) {
 }
 
 void eq_class::code(ostream &s, CgenClassTable& cgen_class) {
-    load_two_int(s, cgen_class, e1, e2);
 
-  // load true
+  // load to value to t1 and t2
+  e1->code(s, cgen_class);
+  emit_push(ACC, s);
+  // push to stack
+  e2->code(s, cgen_class);
+  emit_move(T2, ACC, s);
+  emit_load(T1, 1, SP, s);
+  emit_addiu(SP, SP, 4, s);
+
+  // load true to a0 and false to a1
   emit_load_bool(ACC, BoolConst(TRUE), s);
-  // emit_load_address(ACC, "bool_const1");
+  emit_load_bool(A1, BoolConst(FALSE), s);
 
-  int final_branch_id = cgen_class.get_next_labelid();
+  // get set false label;
+  int false_label = cgen_class.get_next_labelid();
 
-  emit_beq(T2, T3, final_branch_id, s);
+  // get out label
+  int out_label = cgen_class.get_next_labelid();
+
+  // compare address first
+  emit_beq(T1, T2, out_label, s);
+
+  // // if not equal, check whether one is void
+  // emit_beqz(T1, false_label, s);
+  // emit_beqz(T2, false_label, s);
+
+  // call the lib function equality test
+  emit_jal("equality_test", s);
+
+  // goto final label
+  emit_branch(out_label, s);
+
+  // false branch
+  // emit_label_def(false_label, s);
 
   // load false
   emit_load_bool(ACC, BoolConst(FALSE), s);
-  // emit_load_address(ACC, "bool_const0");
 
-  // gene final label
-  emit_label_def(final_branch_id, s);
+  // out branch
+  emit_label_def(out_label, s);
 }
 
 void leq_class::code(ostream &s, CgenClassTable& cgen_class) {

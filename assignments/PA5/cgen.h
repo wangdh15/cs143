@@ -155,15 +155,19 @@ public:
    }
 
 private:
-   int loc_var_offset = -1;
+   int loc_var_offset = -3;
 
 public:
    int push_new_var() {
-      return --loc_var_offset;
+      return loc_var_offset--;
    }
 
-   void pop_new_var() {
-      ++loc_var_offset;
+   void pop_new_var(int num) {
+      loc_var_offset += num;
+   }
+
+   void reset_new_var() {
+      loc_var_offset = -3;
    }
 
 private:
