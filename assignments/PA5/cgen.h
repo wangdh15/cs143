@@ -82,6 +82,7 @@ private:
 
    int label_id{0};
 
+
    // The following methods emit code for
 // constants and global declarations.
 
@@ -91,7 +92,7 @@ private:
    void code_select_gc();
    void code_constants();
    void set_class_tag();
-   void set_class_tag_internal(CgenNodeP cur);
+   void set_class_tag_internal(CgenNodeP cur, int cur_dep);
    void code_class_nameTab();
    void code_class_objTab();
    void code_class_dispTab();
@@ -178,6 +179,14 @@ public:
       cur_class = cur_class_;
    }
 
+private:
+   std::unordered_map<Symbol, int> class_depth;
+
+public:
+   int get_depth(Symbol class_name) {
+      assert(class_depth.find(class_name) != class_depth.end());
+      return class_depth[class_name];
+   }
 };
 
 

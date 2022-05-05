@@ -594,14 +594,15 @@ void CgenClassTable::code_select_gc()
   str << WORD << (cgen_Memmgr_Test == GC_TEST) << endl;
 }
 
-void CgenClassTable::set_class_tag_internal(CgenNodeP cur) {
+void CgenClassTable::set_class_tag_internal(CgenNodeP cur, int cur_dep) {
 
+  class_depth[cur->get_name()] = cur_dep;
   int begin_idx = tag_to_class.size();
   tag_to_class.push_back(cur->get_name());
   auto children = cur->get_children();
   for (List<CgenNode> *l = children; l; l = l->tl()) {
     CgenNodeP cur_child = l->hd();
-    set_class_tag_internal(cur_child);
+    set_class_tag_internal(cur_child, cur_dep + 1);
   }
   int end_idx = tag_to_class.size() - 1;
   subclass_idrange[cur->get_name()] = {begin_idx, end_idx};
@@ -612,7 +613,7 @@ void CgenClassTable::set_class_tag_internal(CgenNodeP cur) {
 void CgenClassTable::set_class_tag() {
 
   CgenNodeP root_class = root();
-  set_class_tag_internal(root_class);
+  set_class_tag_internal(root_class, 0);
 
   // set the correct class tag
   stringclasstag = subclass_idrange[idtable.lookup_string("String")].first;
@@ -623,6 +624,10 @@ void CgenClassTable::set_class_tag() {
     cout << "The class tag range is: " << std::endl;
     for (auto& [k, v] : subclass_idrange) {
       cout << k << " " << v.first << " " << v.second << endl;
+    }
+    cout << "The class depth in inherite tree" << std::endl;
+    for (auto& [k, v] : class_depth) {
+      cout << k << ' ' << v << std::endl;
     }
   }
 }
@@ -1357,16 +1362,26 @@ void typcase_class::code(ostream &s, CgenClassTable& cgen_class) {
   expr->code(s, cgen_class);
 
   // get end idx;
-  int end_idx = cgen_class.get_next_labelid();
+  int end_label = cgen_class.get_next_labelid();
 
   // get class tag
   emit_load(T1, TAG_OFFSET, ACC, s);
 
+  std::vector<Case> sorted_result;
+  for (int i = cases->first(); cases->more(i); i = cases->next(i)) {
+    sorted_result.push_back(cases->nth(i));
+  }
+  std::sort(sorted_result.begin(), sorted_result.end(), [&](Case& a, Case& b) -> bool {
+    return cgen_class.get_depth(a->get_type_decl()) > cgen_class.get_depth(b->get_type_decl());
+  });
+
+  const int n = sorted_result.size();
+
   // gene code for each branch
   // int cur_branch_idx = cgen_class.get_next_labelid();
-  for (int i = cases->first(); cases->more(i); i = cases->next(i)) {
+  for (int i = 0; i < n; ++i) {
     // emit_label_def(cur_branch_idx, s);
-    Case cur_case = cases->nth(i);
+    Case cur_case = sorted_result[i];
     Symbol type_decl = cur_case->get_type_decl();
     auto [begin_idx, end_idx] = cgen_class.get_subclass_idrang(type_decl);
     int next_branch_idx = cgen_class.get_next_labelid();
@@ -1388,12 +1403,12 @@ void typcase_class::code(ostream &s, CgenClassTable& cgen_class) {
     emit_addiu(SP, SP, 4, s);
     cgen_class.pop_new_var(1);
     // goto final index
-    emit_branch(end_idx, s);
+    emit_branch(end_label, s);
     // gene the next branch label
     emit_label_def(next_branch_idx, s);
   }
   // gene the final label
-  emit_label_def(end_idx, s);
+  emit_label_def(end_label, s);
 }
 
 void block_class::code(ostream &s, CgenClassTable& cgen_class) {
