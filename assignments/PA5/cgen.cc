@@ -1248,7 +1248,6 @@ void static_dispatch_class::code(ostream &s, CgenClassTable& cgen_class) {
   // push bp on stack
   // emit_push(FP, s);
   // eval every arg
-
   for (int i = actual->first(); actual->more(i); i = actual->next(i)) {
     Expression expression = actual->nth(i);
     // eval args
@@ -1257,6 +1256,23 @@ void static_dispatch_class::code(ostream &s, CgenClassTable& cgen_class) {
   }
   // eval expr, the result, self, is in ACC.
   expr->code(s, cgen_class);
+
+  int no_void_label = cgen_class.get_next_labelid();
+  // check void
+  emit_bne(ACC, ZERO, no_void_label, s);
+
+    // set the filename
+  Symbol file_name = cgen_class.getCurClass()->get_filename();
+  emit_partial_load_address(ACC, s);
+  stringtable.lookup_string(file_name->get_string())->code_ref(s);
+  s << endl;
+  // set the lineno
+  int line_no = get_line_number();
+  emit_load_imm(T1, line_no, s);
+  // call abort
+  emit_jal("_dispatch_abort", s);// call
+
+  emit_label_def(no_void_label, s);
 
   // load dispTab
   emit_partial_load_address(T1, s);
@@ -1288,6 +1304,23 @@ void dispatch_class::code(ostream &s, CgenClassTable& cgen_class) {
   }
   // eval expr, the result, self, is in ACC.
   expr->code(s, cgen_class);
+
+  int no_void_label = cgen_class.get_next_labelid();
+  // check void
+  emit_bne(ACC, ZERO, no_void_label, s);
+
+    // set the filename
+  Symbol file_name = cgen_class.getCurClass()->get_filename();
+  emit_partial_load_address(ACC, s);
+  stringtable.lookup_string(file_name->get_string())->code_ref(s);
+  s << endl;
+  // set the lineno
+  int line_no = get_line_number();
+  emit_load_imm(T1, line_no, s);
+  // call abort
+  emit_jal("_dispatch_abort", s);// call
+
+  emit_label_def(no_void_label, s);
 
   // load dispTab
   emit_load(T1, DISPTABLE_OFFSET, ACC, s);
@@ -1359,6 +1392,9 @@ void loop_class::code(ostream &s, CgenClassTable& cgen_class) {
 
   // gene exit label
   emit_label_def(exit_idx, s);
+
+  // set result is void
+  emit_move(ACC, ZERO, s);
 }
 
 void typcase_class::code(ostream &s, CgenClassTable& cgen_class) {
@@ -1451,8 +1487,13 @@ void block_class::code(ostream &s, CgenClassTable& cgen_class) {
 void let_class::code(ostream &s, CgenClassTable& cgen_class) {
   if (init->get_type() == NULL) {
     // copy the default value
-    emit_partial_load_address(ACC, s); emit_protobj_ref(type_decl, s); s << endl;
-    emit_jal("Object.copy", s);
+    if (type_decl == Int || type_decl == Str || type_decl == Bool) {
+      emit_partial_load_address(ACC, s); emit_protobj_ref(type_decl, s); s << endl;
+      emit_jal("Object.copy", s);
+    } else {
+      // return void
+      emit_move(ACC, ZERO, s);
+    }
   } else {
     // gene the code for expr
     init->code(s, cgen_class);
