@@ -1259,7 +1259,11 @@ void static_dispatch_class::code(ostream &s, CgenClassTable& cgen_class) {
   expr->code(s, cgen_class);
 
   // load dispTab
-  emit_load(T1, DISPTABLE_OFFSET, ACC, s);
+  emit_partial_load_address(T1, s);
+  emit_disptable_ref(type_name, s);
+  s << endl;
+
+  // emit_load(T1, DISPTABLE_OFFSET, ACC, s);
 
   // get the method offset
   int method_offset = cgen_class.get_method_offset(type_name, name);
@@ -1489,8 +1493,8 @@ static void load_two_int(std::ostream &s, CgenClassTable& cgen_class,
   emit_addiu(SP, SP, 4, s);
 
   // load the int value
-  emit_load(T2, DEFAULT_OBJFIELDS, ACC, s);
-  emit_load(T3, DEFAULT_OBJFIELDS, T1, s);
+  emit_load(T2, DEFAULT_OBJFIELDS, T1, s);
+  emit_load(T3, DEFAULT_OBJFIELDS, ACC, s);
 }
 
 void plus_class::code(ostream &s, CgenClassTable& cgen_class) {
