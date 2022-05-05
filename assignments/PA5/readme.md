@@ -1,3 +1,9 @@
+## 评测脚本的坑
+
+1. 评测脚本默认spim的路径是`/usr/class/cs143/bin/spim`，所以至少需要在这个目录下创个软连接
+2. 评测脚本暴力匹配输出和他自己存的数据，而自己存的加载的lib的路径不一样，所以在执行完paxx.pl之后，执行`python change.py`替换一个对应内容
+3. 到`grading`目录下，执行`./143publicxx PA5`即可获得正确的评判结果
+
 ## runtime 需要的符号
 
 见 cool-runtime 的Figure3,生成的代码需要在对应的位置存在这些符号，而且
