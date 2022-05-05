@@ -800,9 +800,9 @@ void CgenClassTable::code_class_protObj() {
       str << WORD << DEFAULT_OBJFIELDS + all_attrs.size() << endl;
       str << WORD; emit_disptable_ref(cur->get_name(), str); str << endl;
       for (auto& x : all_attrs) {
-          if (x.first == Int ||
-              x.first == Str ||
-              x.first == Bool) {
+          if (x.second == Int ||
+              x.second == Str ||
+              x.second == Bool) {
                 // for Int String Bool, the default value is protObj
                 // else if 0(void)
                 str << WORD; emit_protobj_ref(x.second, str); str << endl;
@@ -840,14 +840,14 @@ static void emit_method_begin(std::ostream& s) {
   emit_move(SELF, ACC, s);
 }
 
-static void emit_method_end(std::ostream& s, int args_num) {
+static void emit_method_end(std::ostream& s, int num_args) {
   // resotre register
   emit_load(SELF, 1, SP, s);
   emit_load(RA, 2, SP, s);
   emit_load(FP, 3, SP, s);
 
   // modify sp
-  emit_addiu(SP, SP, (args_num + 3) * WORD_SIZE, s);
+  emit_addiu(SP, SP, (3 + num_args) * WORD_SIZE, s);
   emit_return(s);
 }
 
@@ -912,7 +912,7 @@ void CgenClassTable::code_class_method() {
     auto& t = class_attr_offset[cur_class->get_name()];
     enterScope();
     for (auto& [name, offset] : t) {
-      addSymbol(name, BASE_LOC_TYPE::SELF_, offset);
+      addSymbol(name, BASE_LOC_TYPE::SELF_, offset + DEFAULT_OBJFIELDS);
     }
     addSymbol(self, BASE_LOC_TYPE::SELF_, 0);
 
@@ -1243,6 +1243,7 @@ void static_dispatch_class::code(ostream &s, CgenClassTable& cgen_class) {
   // push bp on stack
   // emit_push(FP, s);
   // eval every arg
+
   for (int i = actual->first(); actual->more(i); i = actual->next(i)) {
     Expression expression = actual->nth(i);
     // eval args
@@ -1263,6 +1264,7 @@ void static_dispatch_class::code(ostream &s, CgenClassTable& cgen_class) {
 
   // call funciton
   emit_jalr(T1, s);
+
 }
 
 void dispatch_class::code(ostream &s, CgenClassTable& cgen_class) {
@@ -1292,6 +1294,7 @@ void dispatch_class::code(ostream &s, CgenClassTable& cgen_class) {
 
   // call funciton
   emit_jalr(T1, s);
+
 }
 
 void cond_class::code(ostream &s, CgenClassTable& cgen_class) {
@@ -1690,6 +1693,9 @@ void method_class::code(std::ostream& s, CgenClassTable& cgen_class) {
   expr->code(s, cgen_class);
 
   emit_method_end(s, n);
+
+  // pop the args
+  // emit_addiu(SP, SP, n * WORD_SIZE, s);
 
   cgen_class.exitScope();
 
