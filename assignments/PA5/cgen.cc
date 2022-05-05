@@ -1349,8 +1349,16 @@ void cond_class::code(ostream &s, CgenClassTable& cgen_class) {
   // get else label
   int else_label = cgen_class.get_next_labelid();
 
+  // compare two Bool
+  emit_move(T2, ACC, s);
+
+  emit_load_bool(ACC, BoolConst(TRUE), s);
+  emit_load_bool(A1, BoolConst(FALSE), s);
+
+  emit_jal("equality_test", s);
+
   // compare
-  emit_bne(ACC, T1, else_label, s);
+  emit_beq(ACC, A1, else_label, s);
 
   // gene the code for true branch
   then_exp->code(s, cgen_class);
@@ -1577,6 +1585,9 @@ void neg_class::code(ostream &s, CgenClassTable& cgen_class) {
   // gene code for e1
   e1->code(s, cgen_class);
 
+  // copy new data
+  emit_jal("Object.copy", s);
+
   // load the int value to T1
   emit_load(T1, DEFAULT_OBJFIELDS, ACC, s);
 
@@ -1674,18 +1685,11 @@ void comp_class::code(ostream &s, CgenClassTable& cgen_class) {
   e1->code(s, cgen_class);
   // move result to T1
   emit_move(T1, ACC, s);
-  // load false first
-  emit_load_bool(ACC, BoolConst(FALSE), s);
-  // emit_load_address(ACC, "bool_const0");
-
-  int final_label_idx = cgen_class.get_next_labelid();
-  // compre ACC with T1, if not eq, then go to final
-  emit_bne(ACC, T1, final_label_idx, s);
-  // else load true to acc
+  emit_load_bool(T2, BoolConst(FALSE), s);
   emit_load_bool(ACC, BoolConst(TRUE), s);
-  // emit_load_address(ACC, "bool_const1");
-  // gene final label
-  emit_label_def(final_label_idx, s);
+  emit_load_bool(A1, BoolConst(FALSE), s);
+
+  emit_jal("equality_test", s);
 }
 
 void int_const_class::code(ostream &s, CgenClassTable& cgen_class)
@@ -1709,6 +1713,10 @@ void bool_const_class::code(ostream &s, CgenClassTable& cgen_class)
 void new__class::code(ostream &s, CgenClassTable& cgen_class) {
   // load  the address of protObj
   emit_partial_load_address(ACC, s);
+  Symbol real_type = type_name;
+  if (real_type == SELF_TYPE) {
+    real_type = cgen_class.getCurClass()->get_name();
+  }
   emit_protobj_ref(type_name, s); s << endl;
 
   // copy the protObj
