@@ -172,11 +172,15 @@ public:
    }
 
 private:
-   Symbol cur_class;
+   CgenNodeP cur_class;
 
 public:
-   Symbol setCurClass(Symbol cur_class_) {
+   void setCurClass(CgenNodeP cur_class_) {
       cur_class = cur_class_;
+   }
+
+   CgenNodeP getCurClass() {
+      return cur_class;
    }
 
 private:

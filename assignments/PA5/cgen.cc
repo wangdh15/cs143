@@ -862,7 +862,7 @@ void CgenClassTable::code_class_init() {
 
   for(List<CgenNode> *l = nds; l; l = l->tl()) {
     CgenNodeP cur_class = l->hd();
-    setCurClass(cur_class->get_name());
+    setCurClass(cur_class);
     // add attrs to symbol
     auto& t = class_attr_offset[cur_class->get_name()];
     enterScope();
@@ -906,7 +906,7 @@ void CgenClassTable::code_class_method() {
 
   for (List<CgenNode> *l = nds; l; l = l -> tl()) {
     CgenNodeP cur_class = l->hd();
-    setCurClass(cur_class->get_name());
+    setCurClass(cur_class);
     // add attrs to Symbol
     Symbol cur_class_name = cur_class->get_name();
     if (cur_class_name == Object ||
@@ -1364,6 +1364,26 @@ void typcase_class::code(ostream &s, CgenClassTable& cgen_class) {
   // get end idx;
   int end_label = cgen_class.get_next_labelid();
 
+  int no_zero_label = cgen_class.get_next_labelid();
+  int case_error1_label = cgen_class.get_next_labelid();
+
+  // test expr is void of not
+  emit_bne(ACC, ZERO, no_zero_label, s);
+
+  // set the filename
+  Symbol file_name = cgen_class.getCurClass()->get_filename();
+  emit_partial_load_address(ACC, s);
+  stringtable.lookup_string(file_name->get_string())->code_ref(s);
+  s << endl;
+  // set the lineno
+  int line_no = get_line_number();
+  emit_load_imm(T1, line_no, s);
+  // call abort
+  emit_jal("_case_abort2", s);
+
+
+  // begin process;
+  emit_label_def(no_zero_label, s);
   // get class tag
   emit_load(T1, TAG_OFFSET, ACC, s);
 
@@ -1407,6 +1427,12 @@ void typcase_class::code(ostream &s, CgenClassTable& cgen_class) {
     // gene the next branch label
     emit_label_def(next_branch_idx, s);
   }
+
+  // nomatch:
+  emit_label_def(case_error1_label, s);
+  // call abort
+  emit_jal("_case_abort", s);
+
   // gene the final label
   emit_label_def(end_label, s);
 }
@@ -1687,7 +1713,7 @@ void object_class::code(ostream &s, CgenClassTable& cgen_class) {
 }
 
 int CgenClassTable::get_method_offset(Symbol class_name, Symbol method_name) {
-      if (class_name == SELF_TYPE) class_name = cur_class;
+      if (class_name == SELF_TYPE) class_name = cur_class->get_name();
       if (class_method_offset.find(class_name) == class_method_offset.end()) {
          std::cerr << "get_method_offset error! cannot find:"  \
                    << class_name << "::" << method_name << std::endl;
